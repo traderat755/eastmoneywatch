@@ -148,8 +148,10 @@ def getChanges(concept_df: pd.DataFrame):
             '8214': '60日新低',
             '8216': '60日大幅下跌'
         }
+        
         # 增加映射后的类型和相关信息，便于对比
         output_df['类型'] = df['类型'].astype(str).map(type_mapping).fillna('未知类型')
+        
         # 先加一列'四舍五入取整'，在加百分号前处理
         output_df['四舍五入取整'] = df['涨跌幅'].apply(lambda x: int(round(x * 100)) if pd.notnull(x) else None)
         output_df['相关信息'] = df['涨跌幅'].apply(
@@ -161,20 +163,24 @@ def getChanges(concept_df: pd.DataFrame):
         # 确保股票代码列数据类型一致
         output_df['股票代码'] = output_df['股票代码'].astype(str)
         first_concept_df['股票代码'] = first_concept_df['股票代码'].astype(str)
-        output_df = pd.merge(output_df, first_concept_df[['股票代码', '板块名称']], on='股票代码', how='left')
+        
+        # 重命名first_concept_df中的板块名称字段，避免与output_df中的类型字段冲突
+        first_concept_df = first_concept_df.rename(columns={'板块名称': '板块名称_merge'})
+        
+        output_df = pd.merge(output_df, first_concept_df[['股票代码', '板块名称_merge', '板块代码']], on='股票代码', how='left')
+        
+        # 将板块名称_merge重命名回板块名称
+        output_df = output_df.rename(columns={'板块名称_merge': '板块名称'})
 
-        output_df = output_df.sort_values('时间')
-
-        # 先排序再加上午/下午列
-        html_df = output_df[['板块名称', '时间', '名称', '相关信息','类型', '四舍五入取整']].copy()
+        # 移除所有排序逻辑，只保留基本的数据处理和去重
+        html_df = output_df[['板块代码', '板块名称', '时间', '名称', '相关信息','类型', '四舍五入取整']].copy()
+        
+        # 添加上下午字段
         def am_pm_col(tm):
             hour = int(tm[:2])
             return '上午' if hour < 12 else '下午'
         html_df['上下午'] = html_df['时间'].apply(am_pm_col)
-        # 新增一列用于排序，转为分钟数
-        html_df['时间排序'] = html_df['时间'].apply(lambda tm: int(tm[:2])*60 + int(tm[3:5]))
-        html_df = html_df.sort_values(['上下午','板块名称', '时间排序'])
-
+        
         # 只在内存处理和去重，改为按"名称+类型"去重
         html_df = html_df.drop_duplicates(subset=['名称', '类型'], keep='last')
         html_df = html_df.drop_duplicates(subset=['名称', '时间'], keep='last')

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import MultiSelect from './components/MultiSelect';
+import MultiSelect from '@/components/MultiSelect';
 
 interface StockInfo {
   name: string;
@@ -79,6 +79,10 @@ const StockMarketMonitor = () => {
           const fetchedData: StockDataItem[] = JSON.parse(event.data);
           setUpdateTime(new Date().toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }));
           if (fetchedData && fetchedData.length > 0) {
+            // 调试：检查数据结构
+            console.log('接收到的数据示例:', fetchedData[0]);
+            console.log('数据字段:', Object.keys(fetchedData[0]));
+            
             // 处理数据逻辑，与原fetch一致
             const concepts: ConceptData = {};
             const conceptNameSet = new Set<string>();
@@ -91,6 +95,7 @@ const StockMarketMonitor = () => {
               if (!item["板块名称"] || !item["时间"] || !item["名称"]) continue;
               const currentTime = item["时间"];
               const currentPeriod = item["上下午"];
+              console.log(`检查时间点: ${currentPeriod} ${currentTime}`);
               if (currentTime > lastTime || (currentTime === lastTime && currentPeriod > lastPeriod)) {
                 lastTime = currentTime;
                 lastPeriod = currentPeriod;
@@ -176,12 +181,25 @@ const StockMarketMonitor = () => {
       const key = `${stock.name}__${typeStr}`;
       uniqueStocksMap.set(key, stock);
     });
-    const uniqueStocks = Array.from(uniqueStocksMap.values());
+    
+    // 添加稳定的排序逻辑，按股票名称排序
+    const uniqueStocks = Array.from(uniqueStocksMap.values()).sort((a, b) => {
+      // 首先按股票名称排序
+      const nameCompare = a.name.localeCompare(b.name, 'zh-CN');
+      if (nameCompare !== 0) return nameCompare;
+      
+      // 如果名称相同，按类型排序
+      const typeA = a.type || '未知类型';
+      const typeB = b.type || '未知类型';
+      return typeA.localeCompare(typeB, 'zh-CN');
+    });
+
+    console.log('renderStockInfo 去重排序后数据:', uniqueStocks.map(s => `${s.name}(${s.value}, ${s.type || '未知类型'})`));
 
     return (
       <>
         {uniqueStocks.map((stock, index) => (
-          <React.Fragment key={index}>
+          <React.Fragment key={`${stock.name}__${stock.type || '未知类型'}`}>
             {index > 0 && ', '}
             <span className={stock.isNew ? 'bg-yellow-300' : ''}>
               {stock.name}
