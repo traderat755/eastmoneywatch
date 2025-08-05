@@ -1,19 +1,16 @@
 {
-  "name": "eastmoneywatch",
+  "name": "my-fullstack-app",
   "private": true,
   "scripts": {
     "dev": "concurrently \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
     "dev:frontend": "cd frontend && pnpm dev",
-    "dev:backend": "cd backend && uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:backend": "cd backend && uv run uvicorn main:app --reload --port 61125",
     "build": "pnpm run build:frontend && pnpm run build:backend",
     "build:frontend": "cd frontend && pnpm build",
-    "build:backend": "cd backend && uv run pyinstaller -c -F --clean --name backend-app --distpath ../dist ./main.py",
-    "install:all": "pnpm install && cd backend && uv sync",
-    "start": "concurrently \"pnpm run start:backend\" \"pnpm run start:frontend\"",
-    "start:frontend": "cd frontend && pnpm preview",
-    "start:backend": "cd backend && uv run uvicorn main:app --host 0.0.0.0 --port 8000"
+    "build:backend": "cd backend && echo \"Backend build step not yet implemented\"",
+    "install:all": "pnpm install && cd backend && uv sync --quiet"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.0"
   }
 }

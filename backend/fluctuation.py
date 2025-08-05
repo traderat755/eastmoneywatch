@@ -4,58 +4,37 @@ import pandas as pd
 import requests
 import time as t
 from typing import Optional
-import sys
 import akshare as ak
+from utils import get_resource_path
 
 
 def filter_stock_data(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     """
     过滤股票数据，根据涨跌幅、类型和股票名称进行筛选
-    
+
     Args:
         df: 包含股票数据的DataFrame，需要包含'涨跌幅'、'类型'和'股票名称'列
-        
+
     Returns:
         过滤后的DataFrame，如果输入为None或空则返回None
     """
     if df is None or df.empty:
         return None
-        
+
     # 过滤涨跌幅条件：涨幅<100% 且 (涨幅≥5% 或 跌幅≤-5%)
     df = df.copy()
     df = df[(df['涨跌幅'] < 1) & ((df['涨跌幅'] >= 0.05) | (df['涨跌幅'] <= -0.05))]
-    
+
     # 过滤负面类型
     negative_types = ['8194', '8', '128', '8208', '8210', '8212', '8214', '8216', '8203', '99', '106']
     df = df[~df['类型'].astype(str).isin(negative_types)]
-    
+
     # 过滤ST股票
     df = df[~df['股票名称'].str.contains('ST')]
-    
+
     return df
 
 
-def get_resource_path(relative_path):
-    """获取资源文件的路径，支持开发环境和打包环境"""
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller 创建临时文件夹 _MEIpass，并将路径存储在 _MEIPASS 中
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
-
-# 设置 akshare 的数据文件路径
-akshare_path = get_resource_path('akshare')
-os.environ['AKSHARE_HOME'] = akshare_path
-# 确保数据目录存在
-file_fold_path = os.path.join(akshare_path, 'file_fold')
-os.makedirs(file_fold_path, exist_ok=True)
-
-# 创建默认的 calendar.json 文件（如果不存在）
-calendar_path = os.path.join(file_fold_path, 'calendar.json')
-if not os.path.exists(calendar_path):
-    with open(calendar_path, 'w', encoding='utf-8') as f:
-        json.dump({"calendar": []}, f)
 
 HEADERS = {
     'Accept': '*/*',
@@ -178,7 +157,10 @@ def getChanges(concept_df: pd.DataFrame):
         )
 
 
-        first_concept_df = changedConcepts_df.drop_duplicates(subset=['股票代码'], keep='first')
+        first_concept_df = changedConcepts_df.drop_duplicates(subset=['股票代码'], keep='first').copy()
+        # 确保股票代码列数据类型一致
+        output_df['股票代码'] = output_df['股票代码'].astype(str)
+        first_concept_df['股票代码'] = first_concept_df['股票代码'].astype(str)
         output_df = pd.merge(output_df, first_concept_df[['股票代码', '板块名称']], on='股票代码', how='left')
 
         output_df = output_df.sort_values('时间')
@@ -192,8 +174,11 @@ def getChanges(concept_df: pd.DataFrame):
         # 新增一列用于排序，转为分钟数
         html_df['时间排序'] = html_df['时间'].apply(lambda tm: int(tm[:2])*60 + int(tm[3:5]))
         html_df = html_df.sort_values(['上下午','板块名称', '时间排序'])
-        # 只在内存处理和去重，不再写入 static/changes.csv
+
+        # 只在内存处理和去重，改为按"名称+类型"去重
         html_df = html_df.drop_duplicates(subset=['名称', '类型'], keep='last')
+        html_df = html_df.drop_duplicates(subset=['名称', '时间'], keep='last')
+
         return html_df
 
 

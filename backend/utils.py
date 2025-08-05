@@ -1,0 +1,87 @@
+import os
+import sys
+import requests
+import pandas as pd
+
+
+def get_data_dir():
+    """获取用户数据目录"""
+    if sys.platform == "darwin":  # macOS
+        return os.path.expanduser("~/Library/Application Support/eastmoneywatch")
+    elif sys.platform == "win32":  # Windows
+        return os.path.expanduser("~/AppData/Local/eastmoneywatch")
+    else:  # Linux
+        return os.path.expanduser("~/.local/share/eastmoneywatch")
+
+
+def get_resource_path(relative_path):
+    """获取资源文件的路径，支持开发环境和打包环境"""
+    try:
+        # PyInstaller 创建临时文件夹 _MEIpass，并将路径存储在 _MEIPASS 中
+        if hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+
+        full_path = os.path.join(base_path, relative_path)
+        if os.path.exists(full_path):
+            return full_path
+        else:
+            print(f"Warning: Resource not found at {full_path}")
+            return None
+    except Exception as e:
+        print(f"Error accessing resource path: {e}")
+        return None
+
+
+def setup_static_directory():
+    """设置静态文件目录"""
+    if hasattr(sys, '_MEIPASS'):
+        # 打包后：在用户数据目录创建
+        static_dir = os.path.join(get_data_dir(), "static")
+    else:
+        # 开发模式：在当前目录创建
+        static_dir = "static"
+
+    os.makedirs(static_dir, exist_ok=True)
+    return static_dir
+
+def uplimit10jqka(date:str='20231231'):
+    '''
+    Index(['open_num', 'first_limit_up_time', 'last_limit_up_time', 'code',
+       'limit_up_type', 'order_volume', 'is_new', 'limit_up_suc_rate',
+       'currency_value', 'market_id', 'is_again_limit', 'change_rate',
+       'turnover_rate', 'reason_type', 'order_amount', 'high_days', 'name',
+       'high_days_value', 'change_tag', 'market_type', 'latest',
+       'time_preview'],
+      dtype='object')
+
+    股票代码=code, 几天几板文案=high_days
+    '''
+    cookies = {
+    'v': 'A5lFEWDLFZlL3MkNmn0O1b5bro52JoyfdxqxbLtOFUA_wrfwA3adqAdqwTFI',
+    }
+
+    headers = {
+        'accept': 'application/json, text/plain, */*',
+        'accept-language': 'zh-CN,zh-TW;q=0.9,zh;q=0.8,en-US;q=0.7,en;q=0.6,ja;q=0.5',
+        'priority': 'u=1, i',
+        'referer': 'https://data.10jqka.com.cn/datacenterph/limitup/limtupInfo.html?client_userid=nM9Y3&back_source=hyperlink&share_hxapp=isc&fontzoom=no',
+        'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+        # 'cookie': 'v=A5lFEWDLFZlL3MkNmn0O1b5bro52JoyfdxqxbLtOFUA_wrfwA3adqAdqwTFI',
+    }
+
+    response = requests.get(
+        f'https://data.10jqka.com.cn/dataapi/limit_up/limit_up_pool?page=1&limit=15&field=199112,10,9001,330323,330324,330325,9002,330329,133971,133970,1968584,3475914,9003,9004&filter=HS,GEM2STAR&date={date}&order_field=330324&order_type=0&_=1754378627951',
+        cookies=cookies,
+        headers=headers,
+    )
+    result = response.json()['data']['info']
+    df = pd.DataFrame(result)
+    return df

@@ -6,6 +6,9 @@ interface StockInfo {
   name: string;
   value: string;
   isLimit: boolean;
+  isNew?: boolean;
+  type?: string; // 添加类型字段
+  sign?: string; // 添加sign字段（几天几板）
 }
 
 type TimeGroup = Record<string, StockInfo[]>;
@@ -24,7 +27,11 @@ interface StockDataItem {
   "四舍五入取整": number;
   "类型": string;
   "上下午": "上午" | "下午";
+  "sign"?: string; // 添加sign字段（几天几板）
 }
+
+// 涨停板类型列表
+const LIMIT_UP_TYPES = ['封涨停板', '打开涨停板'];
 
 const StockMarketMonitor = () => {
   const [data, setData] = useState<ConceptData>({});
@@ -34,26 +41,27 @@ const StockMarketMonitor = () => {
   const [updateTime, setUpdateTime] = useState<string>('');
   // 板块多选筛选
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
-  const isTradingHours = () => {
-    const now = new Date();
-    const beijingTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-    const day = beijingTime.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-    const hours = beijingTime.getHours();
-    const minutes = beijingTime.getMinutes();
-    const currentMinutes = hours * 60 + minutes;
 
-    // 添加调试信息
-    console.log('Beijing Time:', beijingTime);
-    console.log('Day:', day, 'Time:', hours + ':' + minutes);
+  // const isTradingHours = () => {
+  //   const now = new Date();
+  //   const beijingTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  //   const day = beijingTime.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  //   const hours = beijingTime.getHours();
+  //   const minutes = beijingTime.getMinutes();
+  //   const currentMinutes = hours * 60 + minutes;
 
-    // Check if it's a weekday (1-5) and within market hours
-    const isTrading = day >= 1 && day <= 5 && // Monday to Friday
-      ((currentMinutes >= 9 * 60 + 30 && currentMinutes < 11 * 60 + 30) || // 9:30-11:30
-        (currentMinutes >= 13 * 60 && currentMinutes < 15 * 60)); // 13:00-15:00
+    // // 添加调试信息
+    // console.log('Beijing Time:', beijingTime);
+    // console.log('Day:', day, 'Time:', hours + ':' + minutes);
 
-    console.log('Is trading hours:', isTrading);
-    return isTrading;
-  };
+    // // Check if it's a weekday (1-5) and within market hours
+    // const isTrading = day >= 1 && day <= 5 && // Monday to Friday
+    //   ((currentMinutes >= 9 * 60 + 30 && currentMinutes < 11 * 60 + 30) || // 9:30-11:30
+    //     (currentMinutes >= 13 * 60 && currentMinutes < 15 * 60)); // 13:00-15:00
+
+  //   console.log('Is trading hours:', isTrading);
+  //   return isTrading;
+  // };
 
   useEffect(() => {
     // WebSocket连接
@@ -62,7 +70,7 @@ const StockMarketMonitor = () => {
     let manuallyClosed = false;
 
     function connectWS() {
-      ws = new window.WebSocket('ws://localhost:61115/ws/changes');
+      ws = new window.WebSocket('ws://localhost:61125/ws/changes');
       ws.onopen = () => {
         setLoadingMessage('已连接数据流...');
       };
@@ -74,6 +82,23 @@ const StockMarketMonitor = () => {
             // 处理数据逻辑，与原fetch一致
             const concepts: ConceptData = {};
             const conceptNameSet = new Set<string>();
+            const currentStockKeys = new Set<string>();
+
+            // 找出最后一个时间点
+            let lastTime = '';
+            let lastPeriod = '';
+            for (const item of fetchedData) {
+              if (!item["板块名称"] || !item["时间"] || !item["名称"]) continue;
+              const currentTime = item["时间"];
+              const currentPeriod = item["上下午"];
+              if (currentTime > lastTime || (currentTime === lastTime && currentPeriod > lastPeriod)) {
+                lastTime = currentTime;
+                lastPeriod = currentPeriod;
+              }
+            }
+
+            console.log(`最后一个时间点: ${lastPeriod} ${lastTime}`);
+
             for (const item of fetchedData) {
               if (!item["板块名称"] || !item["时间"] || !item["名称"]) continue;
               if (!concepts[item["板块名称"]]) {
@@ -88,15 +113,30 @@ const StockMarketMonitor = () => {
               if (typeof item["四舍五入取整"] === 'number') {
                 valueStr = item["四舍五入取整"].toString();
               }
+
+              // 修改股票key生成逻辑，按"名称+类型"生成，与去重逻辑保持一致
+              const isLimit = LIMIT_UP_TYPES.includes(item["类型"]);
+              const stockKey = `${item["名称"]}_${item["类型"]}`;
+              console.log(`生成股票key: ${stockKey}, 名称: ${item["名称"]}, 类型: ${item["类型"]}, 涨跌幅: ${item["四舍五入取整"]}, 是否涨停: ${isLimit}`);
+              currentStockKeys.add(stockKey);
+
+              // 判断是否为最后一个时间点的股票
+              const isLastTimeStock = (time === lastTime && period === lastPeriod);
+              console.log(`股票 ${item["名称"]}(${item["类型"]}) 是否为最后时间点股票: ${isLastTimeStock} (时间: ${period} ${time})`);
+
               concepts[item["板块名称"]][period][time].push({
                 name: item["名称"],
                 value: valueStr,
-                isLimit: item["类型"] === "封涨停板"
+                isLimit: isLimit,
+                isNew: isLastTimeStock, // 使用isNew字段标记最后时间点的股票
+                type: item["类型"], // 添加类型字段
+                sign: item["sign"] // 添加sign字段
               });
               if (item["板块名称"]) {
                 conceptNameSet.add(item["板块名称"]);
               }
             }
+
             setHasData(true);
             setData(concepts);
             setConceptNames(Array.from(conceptNameSet));
@@ -124,35 +164,50 @@ const StockMarketMonitor = () => {
     };
   }, []);
 
-  const renderStockInfo = (stocks: StockInfo[]): JSX.Element => {
-    // 前端按“名称+类型”去重，类型字段通过 stock.isLimit 判断
+  const renderStockInfo = (stocks: StockInfo[]): React.JSX.Element => {
+    // 前端按"名称+类型"去重，与后端保持一致
+    console.log('renderStockInfo 去重前数据量:', stocks.length);
+    console.log('renderStockInfo 去重前数据:', stocks.map(s => `${s.name}(${s.value}, ${s.type || '未知类型'})`));
+
     const uniqueStocksMap = new Map<string, StockInfo>();
     stocks.forEach((stock) => {
-      // 用“名称+类型”拼接做唯一key
-      const typeStr = stock.isLimit ? 'limit' : 'normal';
+      // 用"名称+类型"拼接做唯一key，与后端drop_duplicates逻辑一致
+      const typeStr = stock.type || '未知类型';
       const key = `${stock.name}__${typeStr}`;
       uniqueStocksMap.set(key, stock);
     });
     const uniqueStocks = Array.from(uniqueStocksMap.values());
+
     return (
       <>
         {uniqueStocks.map((stock, index) => (
           <React.Fragment key={index}>
             {index > 0 && ', '}
-            {stock.name} {(
-              stock.isLimit || Math.round(Number(stock.value)) >= 10
-            ) ? (
-              <span className="text-red-600 font-medium">{stock.value}</span>
-            ) : (
-              <span className="font-medium">{stock.value}</span>
-            )}
+            <span className={stock.isNew ? 'bg-yellow-300' : ''}>
+              {stock.name}
+              {stock.sign && (
+                <span className="text-red-600 font-bold ml-1">[{stock.sign}]</span>
+              )}
+              {' '}
+              {(
+                stock.isLimit || Math.round(Number(stock.value)) >= 10
+              ) ? (
+                <span className="text-red-600 font-medium">
+                  {parseFloat(stock.value) > 0 ? '+' + stock.value : stock.value}
+                </span>
+              ) : (
+                <span className="font-medium">
+                  {parseFloat(stock.value) > 0 ? '+' + stock.value : stock.value}
+                </span>
+              )}
+            </span>
           </React.Fragment>
         ))}
       </>
     );
   };
 
-  const renderPeriodContent = (conceptName: string, period: "上午" | "下午"): JSX.Element[] => {
+  const renderPeriodContent = (conceptName: string, period: "上午" | "下午"): React.JSX.Element[] => {
     const timeGroups = data[conceptName]?.[period] || {};
     const sortedTimes = Object.keys(timeGroups).sort();
 
@@ -175,7 +230,7 @@ const StockMarketMonitor = () => {
                 onChange={setSelectedConcepts}
                 placeholder="请选择板块"
               />
-              <h1 className="text-xl">盘口异动</h1> 
+              <h1 className="text-xl">盘口异动</h1>
               <span className="text-xs">更新时间：{updateTime}</span>
         </div>
         {!hasData && (
