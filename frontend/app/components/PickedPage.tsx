@@ -25,6 +25,7 @@ export function PickedPage() {
   const [pickedStocks, setPickedStocks] = useState<PickedStock[]>([]);
   const [searchResults, setSearchResults] = useState<ConceptStock[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
+  const [stockSectors, setStockSectors] = useState<Sector[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [editingStock, setEditingStock] = useState<string | null>(null);
@@ -59,6 +60,23 @@ export function PickedPage() {
       }
     } catch (error) {
       console.error('加载板块列表失败:', error);
+    }
+  };
+
+  // 加载指定股票的板块列表
+  const loadStockSectors = async (stockCode: string) => {
+    try {
+      const response = await fetch(`http://localhost:61125/api/concepts/stock-sectors/${stockCode}`);
+      const data = await response.json();
+      if (data.status === 'success') {
+        setStockSectors(data.data);
+      } else {
+        console.error('加载股票板块列表失败:', data.message);
+        setStockSectors([]);
+      }
+    } catch (error) {
+      console.error('加载股票板块列表失败:', error);
+      setStockSectors([]);
     }
   };
 
@@ -163,9 +181,11 @@ export function PickedPage() {
   };
 
   // 开始编辑股票
-  const startEdit = (stock: PickedStock) => {
+  const startEdit = async (stock: PickedStock) => {
     setEditingStock(stock.股票代码);
     setEditData({ ...stock });
+    // 加载该股票的可选板块
+    await loadStockSectors(stock.股票代码);
   };
 
   // 取消编辑
@@ -332,8 +352,8 @@ export function PickedPage() {
                         <input
                           type="text"
                           value={editData?.板块代码 || ''}
-                          onChange={(e) => setEditData(prev => prev ? {...prev, 板块代码: e.target.value} : null)}
-                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          readOnly
+                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-white cursor-not-allowed"
                         />
                       ) : (
                         stock.板块代码
@@ -344,7 +364,7 @@ export function PickedPage() {
                         <select
                           value={editData?.板块名称 || ''}
                           onChange={(e) => {
-                            const selectedSector = sectors.find(s => s.板块名称 === e.target.value);
+                            const selectedSector = stockSectors.find(s => s.板块名称 === e.target.value);
                             if (selectedSector) {
                               setEditData(prev => prev ? {
                                 ...prev, 
@@ -356,7 +376,7 @@ export function PickedPage() {
                           className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                         >
                           <option value="">选择板块</option>
-                          {sectors.map((sector) => (
+                          {stockSectors.map((sector) => (
                             <option key={sector.板块代码} value={sector.板块名称}>
                               {sector.板块名称}
                             </option>

@@ -19,6 +19,14 @@ def apply_concept_df_sorting(df, concept_df):
         df['板块代码'] = df['名称'].map(stock_to_sector_map)
         print(f"[get_changes_worker_queue] 已为{len(df[df['板块代码'].notna()])}条记录添加板块代码")
     
+    # 如果df中没有股票代码字段，但有名称字段，尝试从concept_df中获取股票代码
+    if '股票代码' not in df.columns and '名称' in df.columns and '股票代码' in concept_df.columns:
+        print("[get_changes_worker_queue] 现有数据缺少股票代码字段，尝试从concept_df中获取")
+        # 创建股票名称到股票代码的映射
+        stock_to_code_map = dict(zip(concept_df['股票名称'], concept_df['股票代码']))
+        df['股票代码'] = df['名称'].map(stock_to_code_map)
+        print(f"[get_changes_worker_queue] 已为{len(df[df['股票代码'].notna()])}条记录添加股票代码")
+    
     # 先按时间排序
     df = df.sort_values('时间')
     

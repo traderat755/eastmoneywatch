@@ -176,7 +176,7 @@ def getChanges(concept_df: pd.DataFrame):
         output_df = output_df.rename(columns={'板块名称_merge': '板块名称'})
 
         # 移除所有排序逻辑，只保留基本的数据处理和去重
-        html_df = output_df[['板块代码', '板块名称', '时间', '名称', '相关信息','类型', '四舍五入取整']].copy()
+        html_df = output_df[['板块代码', '板块名称', '时间', '名称', '股票代码', '相关信息','类型', '四舍五入取整']].copy()
         
         # 添加上下午字段
         def am_pm_col(tm):

@@ -152,6 +152,21 @@ def start_get_concepts():
     return {"status": "started", "pid": get_concepts_proc.pid}
 
 
+def queue_get_concepts():
+    """将getConcepts任务加入队列执行一次"""
+    try:
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # 启动子进程执行 getConcepts
+        proc = subprocess.Popen([
+            sys.executable, "-c", "from concepts import getConcepts; getConcepts()"
+        ], cwd=backend_dir)
+        print(f"[queue_get_concepts] 已将getConcepts任务加入队列执行，PID: {proc.pid}", flush=True)
+        return {"status": "queued", "pid": proc.pid, "message": "getConcepts任务已加入队列执行"}
+    except Exception as e:
+        print(f"[queue_get_concepts] 执行getConcepts任务失败: {e}", flush=True)
+        return {"status": "error", "message": str(e)}
+
+
 def get_picked_stocks():
     """获取选中的股票列表"""
     try:
@@ -318,6 +333,24 @@ def get_concept_sectors():
     
     except Exception as e:
         print(f"[api/concepts/sectors] 获取板块列表失败: {e}", flush=True)
+        return {"status": "error", "message": str(e)}
+
+
+def get_stock_sectors(stock_code):
+    """获取指定股票在concept_df中对应的所有板块"""
+    global concept_df
+    try:
+        if concept_df is None or concept_df.empty:
+            return {"status": "error", "message": "概念数据未加载"}
+        
+        # 查找指定股票的所有板块
+        stock_sectors = concept_df[concept_df['股票代码'] == stock_code][['板块代码', '板块名称']].drop_duplicates()
+        
+        print(f"[api/concepts/stock-sectors] 获取股票{stock_code}的板块列表，共{len(stock_sectors)}个板块", flush=True)
+        return {"status": "success", "data": stock_sectors.to_dict('records')}
+    
+    except Exception as e:
+        print(f"[api/concepts/stock-sectors] 获取股票板块列表失败: {e}", flush=True)
         return {"status": "error", "message": str(e)}
 
 

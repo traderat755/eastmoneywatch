@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import MultiSelect from '@/components/MultiSelect';
 import { Sidebar } from './components/Sidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { PickedPage } from './components/PickedPage';
 import StockItem from './components/StockItem';
+import toast, { Toaster } from 'react-hot-toast';
 
 interface StockInfo {
   name: string;
+  code: string;
   value: string;
   isLimit: boolean;
   isNew?: boolean;
-  type?: string; // 添加类型字段
-  sign?: string; // 添加sign字段（几天几板）
+  type?: string;
+  sign?: string;
 }
 
 type TimeGroup = Record<string, StockInfo[]>;
@@ -28,6 +31,7 @@ interface StockDataItem {
   "板块名称": string;
   "时间": string;
   "名称": string;
+  "股票代码": string;
   "四舍五入取整": number;
   "类型": string;
   "上下午": "上午" | "下午";
@@ -45,6 +49,32 @@ const StockMarketMonitor = () => {
   const [updateTime, setUpdateTime] = useState<string>('');
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'picked'>('home');
+  const [isLoadingConcepts, setIsLoadingConcepts] = useState(false);
+
+  const handleGetConcepts = async () => {
+    setIsLoadingConcepts(true);
+    try {
+      const response = await fetch('http://localhost:61125/api/queue_get_concepts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        toast.success(result.message || 'getConcepts任务已启动');
+      } else {
+        toast.error(result.message || '启动getConcepts任务失败');
+      }
+    } catch (error) {
+      toast.error('调用getConcepts API失败');
+      console.error('Error calling getConcepts:', error);
+    } finally {
+      setIsLoadingConcepts(false);
+    }
+  };
 
   useEffect(() => {
     // WebSocket连接
@@ -65,6 +95,7 @@ const StockMarketMonitor = () => {
             // 调试：检查数据结构
             console.log('接收到的数据示例:', fetchedData[0]);
             console.log('数据字段:', Object.keys(fetchedData[0]));
+            console.log('股票代码字段值:', fetchedData[0]["股票代码"]);
             
             // 处理数据逻辑，与原fetch一致
             const concepts: ConceptData = {};
@@ -114,6 +145,7 @@ const StockMarketMonitor = () => {
 
               concepts[item["板块名称"]][period][time].push({
                 name: item["名称"],
+                code: item["股票代码"],
                 value: valueStr,
                 isLimit: isLimit,
                 isNew: isLastTimeStock, // 使用isNew字段标记最后时间点的股票
@@ -224,8 +256,20 @@ const StockMarketMonitor = () => {
                   onChange={setSelectedConcepts}
                   placeholder="请选择板块"
                 />
-                <h1 className="text-xl">盘口异动</h1>
-                <span className="text-xs">更新时间：{updateTime}</span>
+                <div className="flex items-center gap-4">
+                  <h1 className="text-xl">盘口异动</h1>
+                </div>
+                <div>
+                <span className="text-xs mr-2">更新时间：{updateTime}</span>
+                <Button 
+                    onClick={handleGetConcepts}
+                    disabled={isLoadingConcepts}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {isLoadingConcepts ? '更新中...' : '更新概念'}
+                  </Button>
+                  </div>
           </div>
           {!hasData && (
             <div className="rounded-md bg-blue-50 dark:bg-blue-900 p-4">
@@ -283,6 +327,16 @@ const StockMarketMonitor = () => {
       <div className="flex-1">
         {renderMainContent()}
       </div>
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#363636',
+            color: '#fff',
+          },
+        }}
+      />
     </div>
   );
 };

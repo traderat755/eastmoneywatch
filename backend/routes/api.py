@@ -2,12 +2,14 @@ from fastapi import APIRouter
 from models import StockData
 from services.backend_service import (
     start_get_concepts,
+    queue_get_concepts,
     get_picked_stocks,
     add_picked_stock,
     update_picked_stock,
     delete_picked_stock,
     search_concepts,
-    get_concept_sectors
+    get_concept_sectors,
+    get_stock_sectors
 )
 
 router = APIRouter()
@@ -16,6 +18,12 @@ router = APIRouter()
 @router.post("/api/start_get_concepts")
 def api_start_get_concepts():
     return start_get_concepts()
+
+
+@router.post("/api/queue_get_concepts")
+def api_queue_get_concepts():
+    """将getConcepts任务加入队列执行一次"""
+    return queue_get_concepts()
 
 
 @router.get("/api/picked")
@@ -52,3 +60,9 @@ def api_search_concepts(q: str = ""):
 def api_get_concept_sectors():
     """获取concept_df中的所有板块"""
     return get_concept_sectors()
+
+
+@router.get("/api/concepts/stock-sectors/{stock_code}")
+def api_get_stock_sectors(stock_code: str):
+    """获取指定股票在concept_df中对应的所有板块"""
+    return get_stock_sectors(stock_code)

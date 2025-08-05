@@ -1,7 +1,9 @@
 import React from 'react';
+import toast from 'react-hot-toast';
 
 interface StockInfo {
   name: string;
+  code: string;
   value: string;
   isLimit: boolean;
   isNew?: boolean;
@@ -15,21 +17,24 @@ interface StockItemProps {
 }
 
 const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
-  // 复制股票名称到剪贴板的函数
-  const copyToClipboard = async (stockName: string) => {
+  // 调试：打印股票对象
+  console.log('StockItem接收到的股票对象:', stock);
+  
+  // 复制股票代码到剪贴板的函数
+  const copyToClipboard = async (stockCode: string) => {
     try {
-      await navigator.clipboard.writeText(stockName);
-      console.log(`已复制股票名称: ${stockName}`);
+      await navigator.clipboard.writeText(stockCode);
+      toast.success(`已复制股票代码: ${stockCode}`);
     } catch (err) {
       console.error('复制失败:', err);
       // 降级方案：使用传统方法
       const textArea = document.createElement('textarea');
-      textArea.value = stockName;
+      textArea.value = stockCode;
       document.body.appendChild(textArea);
       textArea.select();
       document.execCommand('copy');
       document.body.removeChild(textArea);
-      console.log(`已复制股票名称: ${stockName} (降级方案)`);
+      toast.success(`已复制股票代码: ${stockCode}`);
     }
   };
 
@@ -38,8 +43,8 @@ const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
       {showComma && ', '}
       <span 
         className={`${stock.isNew ? 'bg-yellow-300 dark:bg-purple-600' : ''} cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 px-1 rounded transition-colors`}
-        onClick={() => copyToClipboard(stock.name)}
-        title={`点击复制 ${stock.name}`}
+        onClick={() => copyToClipboard(stock.code)}
+        title={`点击复制股票代码 ${stock.code}`}
       >
         {stock.name}
         {stock.sign && (
