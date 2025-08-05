@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import MultiSelect from '@/components/MultiSelect';
 import { Sidebar } from './components/Sidebar';
 import { SettingsPage } from './components/SettingsPage';
+import StockItem from './components/StockItem';
 
 interface StockInfo {
   name: string;
@@ -43,27 +44,6 @@ const StockMarketMonitor = () => {
   const [updateTime, setUpdateTime] = useState<string>('');
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState<'home' | 'settings'>('home');
-
-  // const isTradingHours = () => {
-  //   const now = new Date();
-  //   const beijingTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-  //   const day = beijingTime.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  //   const hours = beijingTime.getHours();
-  //   const minutes = beijingTime.getMinutes();
-  //   const currentMinutes = hours * 60 + minutes;
-
-    // // 添加调试信息
-    // console.log('Beijing Time:', beijingTime);
-    // console.log('Day:', day, 'Time:', hours + ':' + minutes);
-
-    // // Check if it's a weekday (1-5) and within market hours
-    // const isTrading = day >= 1 && day <= 5 && // Monday to Friday
-    //   ((currentMinutes >= 9 * 60 + 30 && currentMinutes < 11 * 60 + 30) || // 9:30-11:30
-    //     (currentMinutes >= 13 * 60 && currentMinutes < 15 * 60)); // 13:00-15:00
-
-  //   console.log('Is trading hours:', isTrading);
-  //   return isTrading;
-  // };
 
   useEffect(() => {
     // WebSocket连接
@@ -201,27 +181,11 @@ const StockMarketMonitor = () => {
     return (
       <>
         {uniqueStocks.map((stock, index) => (
-          <React.Fragment key={`${stock.name}__${stock.type || '未知类型'}`}>
-            {index > 0 && ', '}
-            <span className={stock.isNew ? 'bg-yellow-300 dark:bg-yellow-600' : ''}>
-              {stock.name}
-              {stock.sign && (
-                <span className="text-red-600 font-bold ml-1">[{stock.sign}]</span>
-              )}
-              {' '}
-              {(
-                stock.isLimit || Math.round(Number(stock.value)) >= 10
-              ) ? (
-                <span className="text-red-600 font-medium">
-                  {parseFloat(stock.value) > 0 ? '+' + stock.value : stock.value}
-                </span>
-              ) : (
-                <span className="font-medium">
-                  {parseFloat(stock.value) > 0 ? '+' + stock.value : stock.value}
-                </span>
-              )}
-            </span>
-          </React.Fragment>
+          <StockItem 
+            key={`${stock.name}__${stock.type || '未知类型'}`}
+            stock={stock}
+            showComma={index > 0}
+          />
         ))}
       </>
     );
