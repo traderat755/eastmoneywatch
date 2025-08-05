@@ -1,10 +1,9 @@
-import React from 'react';
 import { ThemeToggle } from './ThemeToggle';
 
 export function SettingsPage() {
   return (
     <div className="p-6 bg-white dark:bg-gray-900 min-h-screen">
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">设置</h1>
         
         <div className="space-y-8">

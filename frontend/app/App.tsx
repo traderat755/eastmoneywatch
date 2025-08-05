@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import MultiSelect from '@/components/MultiSelect';
 import { Sidebar } from './components/Sidebar';
 import { SettingsPage } from './components/SettingsPage';
+import { PickedPage } from './components/PickedPage';
 import StockItem from './components/StockItem';
 
 interface StockInfo {
@@ -43,7 +44,7 @@ const StockMarketMonitor = () => {
   const [hasData, setHasData] = useState(false);
   const [updateTime, setUpdateTime] = useState<string>('');
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
-  const [currentPage, setCurrentPage] = useState<'home' | 'settings'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'picked'>('home');
 
   useEffect(() => {
     // WebSocket连接
@@ -54,7 +55,7 @@ const StockMarketMonitor = () => {
     function connectWS() {
       ws = new window.WebSocket('ws://localhost:61125/ws/changes');
       ws.onopen = () => {
-        setLoadingMessage('已连接数据流...');
+        setLoadingMessage('连接数据流启动中...');
       };
       ws.onmessage = (event) => {
         try {
@@ -207,6 +208,10 @@ const StockMarketMonitor = () => {
     if (currentPage === 'settings') {
       return <SettingsPage />;
     }
+    
+    if (currentPage === 'picked') {
+      return <PickedPage />;
+    }
 
     return (
       <div className='min-h-screen bg-gray-50 dark:bg-gray-900'>
@@ -232,7 +237,7 @@ const StockMarketMonitor = () => {
           {hasData && (
             <>
               <div className="w-full max-h-[90vh] overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
-                <Table noWrapper className="border-collapse w-full bg-white dark:bg-gray-800">
+                <Table noWrapper className="border-collapse w-full bg-white dark:bg-gray-900">
                   <TableHeader className="sticky top-0 z-10 bg-amber-50 dark:bg-blue-900 shadow-md">
                     <TableRow>
                       <TableHead className="w-[10%] p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
@@ -249,7 +254,7 @@ const StockMarketMonitor = () => {
                   <TableBody>
                     {(selectedConcepts.length ? selectedConcepts : Object.keys(data)).map((conceptName, index) => (
                       data[conceptName] && (
-                        <TableRow key={index} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                        <TableRow key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                           <TableCell className="font-semibold align-top text-gray-800 dark:text-gray-200 border-r dark:border-gray-600 p-3">
                             {conceptName}
                           </TableCell>

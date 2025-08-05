@@ -1,8 +1,8 @@
-import { Settings, Home } from 'lucide-react';
+import { Settings, Home, Star } from 'lucide-react';
 
 interface SidebarProps {
-  currentPage: 'home' | 'settings';
-  onPageChange: (page: 'home' | 'settings') => void;
+  currentPage: 'home' | 'settings' | 'picked';
+  onPageChange: (page: 'home' | 'settings' | 'picked') => void;
 }
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
@@ -20,6 +20,18 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
         >
           <Home className="mr-3 h-4 w-4" />
           主页
+        </button>
+        
+        <button
+          onClick={() => onPageChange('picked')}
+          className={`w-full flex items-center px-3 py-2 rounded-lg text-left transition-colors ${
+            currentPage === 'picked'
+              ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+              : 'bg-transparent dark:bg-transparent text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+          }`}
+        >
+          <Star className="mr-3 h-4 w-4" />
+          精选
         </button>
         
         <button

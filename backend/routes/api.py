@@ -1,0 +1,54 @@
+from fastapi import APIRouter
+from models import StockData
+from services.backend_service import (
+    start_get_concepts,
+    get_picked_stocks,
+    add_picked_stock,
+    update_picked_stock,
+    delete_picked_stock,
+    search_concepts,
+    get_concept_sectors
+)
+
+router = APIRouter()
+
+
+@router.post("/api/start_get_concepts")
+def api_start_get_concepts():
+    return start_get_concepts()
+
+
+@router.get("/api/picked")
+def api_get_picked_stocks():
+    """获取选中的股票列表"""
+    return get_picked_stocks()
+
+
+@router.post("/api/picked")
+def api_add_picked_stock(stock_data: StockData):
+    """添加股票到精选列表"""
+    return add_picked_stock(stock_data)
+
+
+@router.put("/api/picked/{stock_code}")
+def api_update_picked_stock(stock_code: str, stock_data: StockData):
+    """更新精选列表中的股票信息"""
+    return update_picked_stock(stock_code, stock_data)
+
+
+@router.delete("/api/picked/{stock_code}")
+def api_delete_picked_stock(stock_code: str):
+    """从精选列表中删除股票"""
+    return delete_picked_stock(stock_code)
+
+
+@router.get("/api/concepts/search")
+def api_search_concepts(q: str = ""):
+    """搜索concept_df中的股票"""
+    return search_concepts(q)
+
+
+@router.get("/api/concepts/sectors")
+def api_get_concept_sectors():
+    """获取concept_df中的所有板块"""
+    return get_concept_sectors()

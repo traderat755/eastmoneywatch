@@ -158,6 +158,9 @@ def getChanges(concept_df: pd.DataFrame):
             lambda x: f"%+.2f" % (x * 100) + "%" if pd.notnull(x) else 'NaN'
         )
 
+        # 过滤掉'四舍五入取整'为0的行
+        output_df = output_df[output_df['四舍五入取整'] != 0]
+
 
         first_concept_df = changedConcepts_df.drop_duplicates(subset=['股票代码'], keep='first').copy()
         # 确保股票代码列数据类型一致
