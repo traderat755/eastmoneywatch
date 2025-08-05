@@ -1,10 +1,10 @@
 import pandas as pd
 import time
 import os
-from datetime import datetime
+import akshare as ak
 from fluctuation import getChanges
-from utils import setup_static_directory, uplimit10jqka
-
+from utils import setup_static_directory, uplimit10jqka,get_latest_trade_date, is_trading_time
+from datetime import datetime
 
 def apply_concept_df_sorting(df, concept_df):
     """应用与concept_df相同的板块排序逻辑，并添加完整的时间排序"""
@@ -60,8 +60,8 @@ def worker(concept_df, queue, interval=3, batch_interval=300):
     # 设置静态目录
     static_dir = setup_static_directory()
 
-    # 获取当前日期
-    current_date = datetime.now().strftime("%Y%m%d")
+    # 获取当前交易日
+    current_date = get_latest_trade_date()
     changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
     print(f"[get_changes_worker_queue] 当日changes文件路径: {changes_path}")
     print(f"[get_changes_worker_queue] 检查changes文件是否存在: {changes_path} -> {os.path.exists(changes_path)}")
@@ -99,28 +99,55 @@ def worker(concept_df, queue, interval=3, batch_interval=300):
     uplimit_cache = None
     last_uplimit_update = 0
     uplimit_cache_interval = 300  # 5分钟更新一次涨停板数据
+    
+    # 交易日检测相关变量
+    last_trade_date_check = time.time()
+    morning_check_time = None  # 记录早上9点检查的时间
 
     while True:
         try:
-            # 检查日期是否变化
-            current_date = datetime.now().strftime("%Y%m%d")
-            if current_date != last_date:
-                # 日期变化，更新文件路径
-                changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
-                print(f"[get_changes_worker_queue] 日期变化，新的changes文件路径: {changes_path}")
-                last_date = current_date
-                # 清空主DataFrame，开始新的一天
-                master_df = pd.DataFrame()
-                last_write = time.time()
-                # 清空涨停板缓存
-                uplimit_cache = None
-                last_uplimit_update = 0
+            now = time.time()
+            current_hour = datetime.now().hour
+            current_minute = datetime.now().minute
+            
+            # 交易日检测策略：
+            # 1. 启动时已检测
+            # 2. 每天早上9点前后5分钟内检查一次（开盘前确保交易日正确）
+            should_check_trade_date = False
+            
+            # 每天早上9点前后5分钟内检查一次
+            if (current_hour == 9 and current_minute <= 5) or (current_hour == 8 and current_minute >= 55):
+                if morning_check_time is None or (now - morning_check_time) >= 3600:  # 确保1小时内只检查一次
+                    should_check_trade_date = True
+                    morning_check_time = now
+                    print(f"[get_changes_worker_queue] 早上9点前后检查交易日变化")
+            
+            # 执行交易日检测
+            if should_check_trade_date:
+                current_date = get_latest_trade_date()
+                if current_date != last_date:
+                    # 交易日变化，更新文件路径
+                    changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
+                    print(f"[get_changes_worker_queue] 交易日变化: {last_date} -> {current_date}")
+                    print(f"[get_changes_worker_queue] 新的changes文件路径: {changes_path}")
+                    last_date = current_date
+                    # 清空主DataFrame，开始新的交易日
+                    master_df = pd.DataFrame()
+                    last_write = time.time()
+                    # 清空涨停板缓存
+                    uplimit_cache = None
+                    last_uplimit_update = 0
+                    print(f"[get_changes_worker_queue] 已清空数据缓存，准备收集新交易日数据")
+                else:
+                    print(f"[get_changes_worker_queue] 交易日未变化: {current_date}")
+            else:
+                # 使用缓存的交易日
+                current_date = last_date
 
             # 定期更新涨停板数据
-            now = time.time()
             if uplimit_cache is None or (now - last_uplimit_update) >= uplimit_cache_interval:
                 try:
-                    print("[get_changes_worker_queue] 开始获取涨停板数据")
+                    print(f"[get_changes_worker_queue] 开始获取涨停板数据，交易日: {current_date}")
                     uplimit_df = uplimit10jqka(current_date)
                     print(f"[get_changes_worker_queue] 获取到涨停板数据，记录数: {len(uplimit_df)}")
                     # 创建股票名称到high_days的映射
@@ -132,9 +159,15 @@ def worker(concept_df, queue, interval=3, batch_interval=300):
                     if uplimit_cache is None:
                         uplimit_cache = {}
 
-            # print(f"[get_changes_worker_queue] 开始获取变更数据，concept_df大小: {len(concept_df) if concept_df is not None else 0}")
-            df = getChanges(concept_df)
+            # 检查是否为交易日且在交易时间内
+            if is_trading_time():
+                print("[get_changes_worker_queue] 当前为交易日且在交易时间内，开始获取数据")
+                df = getChanges(concept_df)
+            else:
+                print("[get_changes_worker_queue] 当前非交易日或不在交易时间内，跳过数据获取")
+                df = pd.DataFrame()
 
+            # 无论是否在交易时间内，都要推送数据到前端
             if not df.empty:
                 # 添加sign列
                 if uplimit_cache:
@@ -159,17 +192,26 @@ def worker(concept_df, queue, interval=3, batch_interval=300):
                 full_data = master_df.where(pd.notnull(master_df), None).to_dict(orient="records")
                 queue.put(full_data)
                 print(f"[get_changes_worker_queue] 已将更新后的完整数据({len(master_df)}条)推送到队列")
+            elif not master_df.empty:
+                # 即使没有新数据，也要推送现有的历史数据到前端
+                # 应用与concept_df相同的排序
+                master_df = apply_concept_df_sorting(master_df, concept_df)
+                
+                # 将现有的历史数据推送到队列
+                full_data = master_df.where(pd.notnull(master_df), None).to_dict(orient="records")
+                queue.put(full_data)
+                print(f"[get_changes_worker_queue] 已推送现有历史数据({len(master_df)}条)到队列")
 
+            now = time.time()
+            if (now - last_write) >= batch_interval:
+                if not master_df.empty:
+                    try:
+                        master_df.to_csv(changes_path, index=False)
+                        print(f"[get_changes_worker_queue] 批量写入 {len(master_df)} 条总记录到 {changes_path}")
+                        last_write = now
+                    except Exception as e:
+                        print(f"[get_changes_worker_queue] 批量写入失败: {e}")
+                        
         except Exception as e:
             print(f"[get_changes_worker_queue] getChanges错误: {e}")
-
-        now = time.time()
-        if (now - last_write) >= batch_interval:
-            if not master_df.empty:
-                try:
-                    master_df.to_csv(changes_path, index=False)
-                    print(f"[get_changes_worker_queue] 批量写入 {len(master_df)} 条总记录到 {changes_path}")
-                    last_write = now
-                except Exception as e:
-                    print(f"[get_changes_worker_queue] 批量写入失败: {e}")
         time.sleep(interval)

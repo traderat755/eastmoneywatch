@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import MultiSelect from '@/components/MultiSelect';
+import { Sidebar } from './components/Sidebar';
+import { SettingsPage } from './components/SettingsPage';
 
 interface StockInfo {
   name: string;
@@ -39,8 +41,8 @@ const StockMarketMonitor = () => {
   const [loadingMessage, setLoadingMessage] = useState('Loading data...');
   const [hasData, setHasData] = useState(false);
   const [updateTime, setUpdateTime] = useState<string>('');
-  // 板块多选筛选
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState<'home' | 'settings'>('home');
 
   // const isTradingHours = () => {
   //   const now = new Date();
@@ -201,7 +203,7 @@ const StockMarketMonitor = () => {
         {uniqueStocks.map((stock, index) => (
           <React.Fragment key={`${stock.name}__${stock.type || '未知类型'}`}>
             {index > 0 && ', '}
-            <span className={stock.isNew ? 'bg-yellow-300' : ''}>
+            <span className={stock.isNew ? 'bg-yellow-300 dark:bg-yellow-600' : ''}>
               {stock.name}
               {stock.sign && (
                 <span className="text-red-600 font-bold ml-1">[{stock.sign}]</span>
@@ -231,71 +233,86 @@ const StockMarketMonitor = () => {
 
     return sortedTimes.map((time, timeIndex) => (
       <div key={timeIndex} className="mb-1 last:mb-0">
-        <span className="text-gray-600 text-xs">{time}</span>{' '}
-        <span className="text-xs">{renderStockInfo(timeGroups[time])}</span>
+        <span className="text-gray-600 dark:text-gray-400 text-xs">{time}</span>{' '}
+        <span className="text-xs text-gray-800 dark:text-gray-200">{renderStockInfo(timeGroups[time])}</span>
       </div>
     ));
   };
 
-  return (
-    <div className='min-h-screen bg-gray-50'>
-      <div className="mx-auto max-w-7xl p-4">
-        <div className="relative z-20 items-center justify-between flex font-bold text-gray-800 mb-4">
-          <MultiSelect
-                label="板块筛选"
-                options={Array.isArray(conceptNames) ? conceptNames.filter((name): name is string => typeof name === 'string').map((name) => ({ label: name, value: name })) : []}
-                value={selectedConcepts}
-                onChange={setSelectedConcepts}
-                placeholder="请选择板块"
-              />
-              <h1 className="text-xl">盘口异动</h1>
-              <span className="text-xs">更新时间：{updateTime}</span>
-        </div>
-        {!hasData && (
-          <div className="rounded-md bg-blue-50 p-4">
-            <div className="text-center py-2">
-              {loadingMessage}
-            </div>
+  const renderMainContent = () => {
+    if (currentPage === 'settings') {
+      return <SettingsPage />;
+    }
+
+    return (
+      <div className='min-h-screen bg-gray-50 dark:bg-gray-900'>
+        <div className="mx-auto max-w-7xl p-4">
+          <div className="relative z-20 items-center justify-between flex font-bold text-gray-800 dark:text-white mb-4">
+            <MultiSelect
+                  label="板块筛选"
+                  options={Array.isArray(conceptNames) ? conceptNames.filter((name): name is string => typeof name === 'string').map((name) => ({ label: name, value: name })) : []}
+                  value={selectedConcepts}
+                  onChange={setSelectedConcepts}
+                  placeholder="请选择板块"
+                />
+                <h1 className="text-xl">盘口异动</h1>
+                <span className="text-xs">更新时间：{updateTime}</span>
           </div>
-        )}
-        {hasData && (
-          <>
-            <div className="w-full max-h-[90vh] overflow-auto rounded-lg border border-gray-200 shadow-sm">
-              <Table noWrapper className="border-collapse w-full bg-white">
-                <TableHeader className="sticky top-0 z-10 bg-amber-50 shadow-md">
-                  <TableRow className="hover:bg-amber-50">
-                    <TableHead className="w-[10%] p-3 text-left font-semibold text-gray-700">
-                      板块
-                    </TableHead>
-                    <TableHead className="w-[45%] p-3 text-left font-semibold text-gray-700">
-                      上午
-                    </TableHead>
-                    <TableHead className="w-[45%] p-3 text-left font-semibold text-gray-700">
-                      下午
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(selectedConcepts.length ? selectedConcepts : Object.keys(data)).map((conceptName, index) => (
-                    data[conceptName] && (
-                      <TableRow key={index} className="hover:bg-gray-50">
-                        <TableCell className="font-semibold align-top text-gray-800 border-r p-3">
-                          {conceptName}
-                        </TableCell>
-                        <TableCell className="align-top border-r p-3 text-left">
-                          {renderPeriodContent(conceptName, "上午")}
-                        </TableCell>
-                        <TableCell className="align-top p-3 text-left">
-                          {renderPeriodContent(conceptName, "下午")}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  ))}
-                </TableBody>
-              </Table>
+          {!hasData && (
+            <div className="rounded-md bg-blue-50 dark:bg-blue-900 p-4">
+              <div className="text-center py-2 text-gray-700 dark:text-gray-300">
+                {loadingMessage}
+              </div>
             </div>
-          </>
-        )}
+          )}
+          {hasData && (
+            <>
+              <div className="w-full max-h-[90vh] overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <Table noWrapper className="border-collapse w-full bg-white dark:bg-gray-800">
+                  <TableHeader className="sticky top-0 z-10 bg-amber-50 dark:bg-blue-900 shadow-md">
+                    <TableRow>
+                      <TableHead className="w-[10%] p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
+                        板块
+                      </TableHead>
+                      <TableHead className="w-[45%] p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
+                        上午
+                      </TableHead>
+                      <TableHead className="w-[45%] p-3 text-left font-semibold text-gray-700 dark:text-gray-300">
+                        下午
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(selectedConcepts.length ? selectedConcepts : Object.keys(data)).map((conceptName, index) => (
+                      data[conceptName] && (
+                        <TableRow key={index} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                          <TableCell className="font-semibold align-top text-gray-800 dark:text-gray-200 border-r dark:border-gray-600 p-3">
+                            {conceptName}
+                          </TableCell>
+                          <TableCell className="align-top border-r dark:border-gray-600 p-3 text-left">
+                            {renderPeriodContent(conceptName, "上午")}
+                          </TableCell>
+                          <TableCell className="align-top p-3 text-left">
+                            {renderPeriodContent(conceptName, "下午")}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex">
+      <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
+      <div className="flex-1">
+        {renderMainContent()}
       </div>
     </div>
   );
