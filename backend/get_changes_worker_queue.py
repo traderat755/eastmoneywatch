@@ -386,6 +386,7 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, b
                 df = pd.DataFrame()
 
             # 无论是否在交易时间内，都要推送数据到前端
+            # 修改逻辑：如果有新数据则处理新数据，否则推送现有数据
             if not df.empty:
                 # 检查是否有新的封涨停板，如果有则更新涨停板数据
                 has_new_limit_up = False
@@ -441,6 +442,19 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, b
                 }
                 queue.put(full_data)
                 print(f"[get_changes_worker_queue] 已将格式化数据({len(frontend_df)}条)推送到队列")
+            elif not master_df.empty:
+                # 非交易时间但有历史数据时，也要推送现有数据到前端
+                print(f"[get_changes_worker_queue] 非交易时间，推送现有数据({len(master_df)}条)到前端")
+                # 为前端准备格式化数据
+                frontend_df = apply_sorting(master_df, uplimit_cache, for_frontend=True)
+                # Replace NaN values with 0 or null before converting to dict
+                frontend_df = frontend_df.fillna('')  # Replace NaN with 0 for numeric fields
+                full_data = {
+                    "columns": list(frontend_df.columns),
+                    "values": frontend_df.values.tolist()
+                }
+                queue.put(full_data)
+                print(f"[get_changes_worker_queue] 已将现有数据({len(frontend_df)}条)推送到队列")
  
             now = time.time()
             if (now - last_write) >= batch_interval:

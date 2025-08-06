@@ -39,7 +39,7 @@ const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
     <>
       {showComma && ', '}
       <div
-        className={`${stock.isNew ? 'bg-yellow-300 dark:bg-purple-900' : ''} cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 px-1 rounded transition-colors`}
+        className={`${stock.isNew ? 'bg-yellow-100 dark:bg-purple-900' : ''} cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 px-1 rounded transition-colors`}
         onClick={() => copyToClipboard(stock.code)}
         title={`点击复制股票代码 ${stock.code}`}
       >

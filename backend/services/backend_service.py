@@ -140,48 +140,11 @@ def initialize_backend_services(buffer_queue):
             print("[sidecar] 未发现picked.csv文件，创建空的picked_df", flush=True)
             picked_df = pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
 
-        # 使用内存中的picked_df重新排序concept_df
-        if not concept_df.empty and not picked_df.empty:
-            # 获取选中的板块代码列表（去重）
-            picked_sector_codes = picked_df['板块代码'].unique().tolist()
-            print(f"[sidecar] 选中的板块代码: {picked_sector_codes}", flush=True)
+        # 更新worker进程中的concept_df和picked_df缓存
+        from get_changes_worker_queue import update_concept_df_cache, update_picked_df_cache
+        update_concept_df_cache(concept_df.copy())
+        update_picked_df_cache(picked_df.copy())
 
-            # 检查concept_df中是否有板块代码字段
-            if '板块代码' in concept_df.columns:
-                # 从concept_df中去掉picked的股票
-                picked_stock_codes = picked_df['股票代码'].unique().tolist()
-                print(f"[sidecar] 需要从concept_df中移除的股票代码: {picked_stock_codes}", flush=True)
-
-                # 记录移除前的concept_df长度
-                original_concept_len = len(concept_df)
-                print(f"[sidecar] 移除前concept_df长度: {original_concept_len}", flush=True)
-
-                # 移除picked中的股票
-                concept_df = concept_df[~concept_df['股票代码'].isin(picked_stock_codes)]
-                removed_count = original_concept_len - len(concept_df)
-                print(f"[sidecar] 从concept_df中移除了{removed_count}条记录", flush=True)
-
-                # 将picked的股票拼接到concept_df前面
-                concept_df = pd.concat([picked_df, concept_df], ignore_index=True)
-                print(f"[sidecar] 将picked_df拼接到concept_df前面，最终长度: {len(concept_df)}", flush=True)
-
-                # 创建排序索引：选中的板块在前，其他板块在后
-                concept_df['_sort_order'] = concept_df['板块代码'].apply(
-                    lambda x: picked_sector_codes.index(x) if x in picked_sector_codes else len(picked_sector_codes)
-                )
-
-                # 按排序索引排序
-                concept_df = concept_df.sort_values('_sort_order').drop('_sort_order', axis=1)
-                print(f"[sidecar] 已重新排序concept_df，选中的板块排在最前面", flush=True)
-
-                # 打印排序后的前几个板块
-                first_sectors = concept_df['板块代码'].head(10).unique()
-                print(f"[sidecar] 排序后前10个板块: {first_sectors.tolist()}", flush=True)
-            else:
-                print(f"[sidecar] concept_df中没有板块代码字段，无法重新排序", flush=True)
-                print(f"[sidecar] concept_df字段: {list(concept_df.columns)}", flush=True)
-        else:
-            print("[sidecar] concept_df或picked_df为空，跳过排序", flush=True)
     except Exception as e:
         print(f"[sidecar] 处理picked.csv时出错: {e}", flush=True)
         picked_df = pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
@@ -234,65 +197,6 @@ def queue_get_concepts():
         return {"status": "error", "message": str(e)}
 
 
-def reorder_concept_df_by_picked_sectors():
-    """根据内存中的picked_df重新排序全局concept_df"""
-    global concept_df, picked_df
-    try:
-        if concept_df is None or concept_df.empty:
-            print("[reorder] concept_df为空，跳过排序", flush=True)
-            return
-        
-        if picked_df is None or picked_df.empty:
-            print("[reorder] picked_df为空，跳过排序", flush=True)
-            return
-        
-        # 获取选中的板块代码列表（去重）
-        picked_sector_codes = picked_df['板块代码'].unique().tolist()
-        print(f"[reorder] 选中的板块代码: {picked_sector_codes}", flush=True)
-        
-        # 检查concept_df中是否有板块代码字段
-        if '板块代码' not in concept_df.columns:
-            print(f"[reorder] concept_df中没有板块代码字段，无法重新排序", flush=True)
-            return
-        
-        # 从concept_df中去掉picked的股票
-        picked_stock_codes = picked_df['股票代码'].unique().tolist()
-        original_concept_len = len(concept_df)
-        
-        # 移除picked中的股票
-        concept_df = concept_df[~concept_df['股票代码'].isin(picked_stock_codes)]
-        removed_count = original_concept_len - len(concept_df)
-        print(f"[reorder] 从concept_df中移除了{removed_count}条记录", flush=True)
-        
-        # 将picked的股票拼接到concept_df前面
-        concept_df = pd.concat([picked_df, concept_df], ignore_index=True)
-        print(f"[reorder] 将picked_df拼接到concept_df前面，最终长度: {len(concept_df)}", flush=True)
-        
-        # 创建排序索引：选中的板块在前，其他板块在后
-        concept_df['_sort_order'] = concept_df['板块代码'].apply(
-            lambda x: picked_sector_codes.index(x) if x in picked_sector_codes else len(picked_sector_codes)
-        )
-        
-        # 按排序索引排序
-        concept_df = concept_df.sort_values('_sort_order').drop('_sort_order', axis=1)
-        print(f"[reorder] 已重新排序concept_df，选中的板块排在最前面", flush=True)
-        
-        # 打印排序后的前几个板块
-        first_sectors = concept_df['板块代码'].head(10).unique()
-        print(f"[reorder] 排序后前10个板块: {first_sectors.tolist()}", flush=True)
-        
-        # 同步更新worker进程中的concept_df和picked_df缓存
-        try:
-            from get_changes_worker_queue import update_concept_df_cache, update_picked_df_cache
-            update_concept_df_cache(concept_df.copy())
-            update_picked_df_cache(picked_df.copy())
-        except Exception as e:
-            print(f"[reorder] 更新worker缓存失败: {e}", flush=True)
-        
-    except Exception as e:
-        print(f"[reorder] 重新排序concept_df时出错: {e}", flush=True)
-
-
 def reload_concept_df():
     """重新加载concept_df并更新worker缓存"""
     global concept_df, picked_df
@@ -309,18 +213,10 @@ def reload_concept_df():
         
         print(f"[reload_concept_df] 重新加载concept_df成功，记录数: {len(concept_df)}", flush=True)
         
-        # 如果有picked_df，重新应用排序
-        if picked_df is not None and not picked_df.empty:
-            print("[reload_concept_df] 检测到picked_df，重新应用排序", flush=True)
-            reorder_concept_df_by_picked_sectors()
-        else:
-            # 只更新concept_df缓存
-            try:
-                from get_changes_worker_queue import update_concept_df_cache
-                update_concept_df_cache(concept_df.copy())
-                print("[reload_concept_df] 已更新worker进程中的concept_df缓存", flush=True)
-            except Exception as e:
-                print(f"[reload_concept_df] 更新worker缓存失败: {e}", flush=True)
+        # 更新worker进程中的concept_df缓存
+        from get_changes_worker_queue import update_concept_df_cache
+        update_concept_df_cache(concept_df.copy())
+        print("[reload_concept_df] 已更新worker进程中的concept_df缓存", flush=True)
         
         return {"status": "success", "message": "概念数据重新加载成功"}
         
@@ -379,8 +275,9 @@ def add_picked_stock(stock_data):
 
         picked_df.to_csv(picked_path, index=False, encoding='utf-8')
 
-        # 重新排序concept_df以反映最新的picked板块优先级
-        reorder_concept_df_by_picked_sectors()
+        # 更新worker进程中的picked_df缓存
+        from get_changes_worker_queue import update_picked_df_cache
+        update_picked_df_cache(picked_df.copy())
 
         print(f"[api/picked] 添加股票成功: {stock_dict['股票名称']}", flush=True)
         return {"status": "success", "message": "股票添加成功"}
@@ -413,8 +310,9 @@ def update_picked_stock(stock_code, stock_data):
         if picked_path:
             picked_df.to_csv(picked_path, index=False, encoding='utf-8')
 
-        # 重新排序concept_df以反映最新的picked板块优先级
-        reorder_concept_df_by_picked_sectors()
+        # 更新worker进程中的picked_df缓存
+        from get_changes_worker_queue import update_picked_df_cache
+        update_picked_df_cache(picked_df.copy())
 
         print(f"[api/picked] 更新股票成功: {stock_code}", flush=True)
         return {"status": "success", "message": "股票更新成功"}
@@ -443,8 +341,9 @@ def delete_picked_stock(stock_code):
         if picked_path:
             picked_df.to_csv(picked_path, index=False, encoding='utf-8')
 
-        # 重新排序concept_df以反映最新的picked板块优先级
-        reorder_concept_df_by_picked_sectors()
+        # 更新worker进程中的picked_df缓存
+        from get_changes_worker_queue import update_picked_df_cache
+        update_picked_df_cache(picked_df.copy())
 
         print(f"[api/picked] 删除股票成功: {stock_code}", flush=True)
         return {"status": "success", "message": "股票删除成功"}
