@@ -68,9 +68,8 @@ def apply_sorting(df, uplimit_cache=None, for_frontend=True):
             df['上下午'] = df['时间'].apply(lambda tm: '上午' if int(tm[:2]) < 12 else '下午')
             
         if uplimit_cache:
-            df['sign'] = df['名称'].map(lambda x: uplimit_cache.get(x, ''))
-        else:
-            df['sign'] = ''
+            df['标识'] = df['名称'].map(lambda x: uplimit_cache.get(x, ''))
+
             
         # 5. 返回数据
         if for_frontend:
@@ -90,7 +89,7 @@ def apply_sorting(df, uplimit_cache=None, for_frontend=True):
                     break
             
             # 构建最终列名列表，去掉板块代码列以减少数据传输量
-            final_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '四舍五入取整', '上下午', 'sign']
+            final_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '四舍五入取整', '上下午', '标识']
             # 只添加板块名称，不添加板块代码
             if sector_name_col:
                 final_columns.insert(1, sector_name_col)
@@ -314,7 +313,7 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, b
         # 为前端格式化数据
         frontend_df = apply_sorting(master_df, for_frontend=True)
         # Replace NaN values with 0 before converting to dict
-        frontend_df = frontend_df.fillna(0)  # Replace NaN with 0 for numeric fields
+        frontend_df = frontend_df.fillna('')  # Replace NaN with 0 for numeric fields
         initial_data = {
             "columns": list(frontend_df.columns),
             "values": frontend_df.values.tolist()
@@ -435,28 +434,14 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, b
                 # 为前端准备格式化数据
                 frontend_df = apply_sorting(master_df, uplimit_cache, for_frontend=True)
                 # Replace NaN values with 0 or null before converting to dict
-                frontend_df = frontend_df.fillna(0)  # Replace NaN with 0 for numeric fields
+                frontend_df = frontend_df.fillna('')  # Replace NaN with 0 for numeric fields
                 full_data = {
                     "columns": list(frontend_df.columns),
                     "values": frontend_df.values.tolist()
                 }
                 queue.put(full_data)
                 print(f"[get_changes_worker_queue] 已将格式化数据({len(frontend_df)}条)推送到队列")
-            elif not master_df.empty:
-                # 即使没有新数据，也要检查是否需要重新排序（picked.csv可能已更新）
-                master_df = apply_sorting(master_df, uplimit_cache, for_frontend=False)
-
-                # 强制推送数据，确保前端获得最新排序
-                frontend_df = apply_sorting(master_df, uplimit_cache, for_frontend=True)
-                # Replace NaN values with 0 or null before converting to dict
-                frontend_df = frontend_df.fillna(0)  # Replace NaN with 0 for numeric fields
-                full_data = {
-                    "columns": list(frontend_df.columns),
-                    "values": frontend_df.values.tolist()
-                }
-                queue.put(full_data)
-                print(f"[get_changes_worker_queue] 已推送现有历史数据({len(frontend_df)}条)到队列，检查排序更新")
-
+ 
             now = time.time()
             if (now - last_write) >= batch_interval:
                 if not master_df.empty:

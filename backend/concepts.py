@@ -36,6 +36,8 @@ def getConcepts() -> None:
             continue
 
         stock_board_concept_spot_em_df = ak.stock_board_concept_cons_em(symbol=v['板块代码'])
+        if len(stock_board_concept_spot_em_df)>99:
+            continue
         print(f"[getConcepts] 板块 {v['板块名称']} 包含 {len(stock_board_concept_spot_em_df)} 只股票")
 
         for _, v2 in stock_board_concept_spot_em_df.iterrows():

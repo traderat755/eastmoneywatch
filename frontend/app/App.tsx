@@ -35,7 +35,7 @@ interface StockDataItem {
   "四舍五入取整": number;
   "类型": string;
   "上下午": "上午" | "下午";
-  "sign"?: string; // 添加sign字段（几天几板）
+  "标识"?: string; // 添加sign字段（几天几板）
 }
 
 // 涨停板类型列表
@@ -137,7 +137,7 @@ const StockMarketMonitor = () => {
                 isLimit: isLimit,
                 isNew: isLastTimeStock, // 使用isNew字段标记最后时间点的股票
                 type: item["类型"], // 添加类型字段
-                sign: item["sign"] // 添加sign字段
+                sign: item["标识"] // 添加sign字段
               });
             }
 
@@ -206,7 +206,7 @@ const StockMarketMonitor = () => {
                 isLimit: isLimit,
                 isNew: isLastTimeStock, // 使用isNew字段标记最后时间点的股票
                 type: item["类型"], // 添加类型字段
-                sign: item["sign"] // 添加sign字段
+                sign: item["标识"] // 添加sign字段
               });
             }
 

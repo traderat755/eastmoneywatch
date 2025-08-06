@@ -108,7 +108,7 @@ def initialize_backend_services(buffer_queue):
             print(f"[sidecar] 当天的changes文件不存在: {changes_path}，开始运行 prepareChanges...", flush=True)
             backend_dir = os.path.dirname(os.path.abspath(__file__))
             prepare_proc = subprocess.Popen([
-                sys.executable, "-c", "from prepare import prepareChanges; prepareChanges()"
+                sys.executable, "-c", f"from prepare import prepareChanges; prepareChanges('{current_date}')"
             ], cwd=os.path.dirname(backend_dir))
             print(f"[sidecar] 已启动 prepareChanges 子进程，PID: {prepare_proc.pid}", flush=True)
 

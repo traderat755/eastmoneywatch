@@ -45,7 +45,7 @@ const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
       >
         {stock.name}
         {stock.sign && (
-          <div className="text-red-600 ml-1">[{stock.sign}]</div>
+          <span className="text-red-600 ml-1">[{stock.sign}]</span>
         )}
         {' '}
         {(
