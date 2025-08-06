@@ -11,44 +11,44 @@ def is_trading_time():
     try:
         # 获取当前北京时间
         now = datetime.now()
-        
+
         # 判断是否为工作日（周一到周五）
         if now.weekday() >= 5:  # 5=周六, 6=周日
             print(f"[is_trading_time] 当前为周末，非交易日")
             return False
-        
+
         # 获取当前时间的小时和分钟
         current_hour = now.hour
         current_minute = now.minute
         current_time_minutes = current_hour * 60 + current_minute
-        
+
         # 交易时间：上午9:30-11:30，下午13:00-15:00
         morning_start = 9 * 60 + 30  # 9:30
         morning_end = 11 * 60 + 30   # 11:30
         afternoon_start = 13 * 60     # 13:00
         afternoon_end = 15 * 60       # 15:00
-        
+
         # 判断是否在交易时间内
         is_trading_hours = (
             (current_time_minutes >= morning_start and current_time_minutes < morning_end) or
             (current_time_minutes >= afternoon_start and current_time_minutes < afternoon_end)
         )
-        
+
         if not is_trading_hours:
             print(f"[is_trading_time] 当前时间 {current_hour:02d}:{current_minute:02d} 不在交易时间内")
             return False
-        
+
         # 检查是否为交易日（通过获取最新交易日来判断）
         latest_trade_date = get_latest_trade_date()
         current_date = now.strftime("%Y%m%d")
-        
+
         if current_date != latest_trade_date:
             print(f"[is_trading_time] 当前日期 {current_date} 不是最新交易日 {latest_trade_date}")
             return False
-        
+
         print(f"[is_trading_time] 当前为交易日且在交易时间内: {current_hour:02d}:{current_minute:02d}")
         return True
-        
+
     except Exception as e:
         print(f"[is_trading_time] 判断交易时间失败: {e}")
         return False
@@ -57,7 +57,7 @@ def is_trading_time():
 def get_latest_trade_date():
     """使用akshare获取上证指数的最后一个交易日"""
     try:
-        df = ak.stock_zh_index_daily_tx(symbol="sh000688")
+        df = ak.stock_zh_index_daily_em(symbol="sh000688")
         latest_trade_date = df['date'].values[-1]
         # 将日期转换为YYYYMMDD格式
         if isinstance(latest_trade_date, str):
@@ -71,7 +71,7 @@ def get_latest_trade_date():
         else:
             # 如果是datetime对象
             date_obj = pd.to_datetime(latest_trade_date)
-        
+
         return date_obj.strftime("%Y%m%d")
     except Exception as e:
         print(f"[get_changes_worker_queue] 获取最新交易日失败: {e}，使用当前日期")

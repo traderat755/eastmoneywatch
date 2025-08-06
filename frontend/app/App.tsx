@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
 import MultiSelect from '@/components/MultiSelect';
 import { Sidebar } from './components/Sidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { PickedPage } from './components/PickedPage';
 import StockItem from './components/StockItem';
-import toast, { Toaster } from 'react-hot-toast';
+import { UpdateConceptsButton } from './components/UpdateConceptsButton';
+import  { Toaster } from 'react-hot-toast';
 
 interface StockInfo {
   name: string;
@@ -49,32 +49,8 @@ const StockMarketMonitor = () => {
   const [updateTime, setUpdateTime] = useState<string>('');
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'picked'>('home');
-  const [isLoadingConcepts, setIsLoadingConcepts] = useState(false);
 
-  const handleGetConcepts = async () => {
-    setIsLoadingConcepts(true);
-    try {
-      const response = await fetch('http://localhost:61125/api/queue_get_concepts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      const result = await response.json();
-      
-      if (response.ok) {
-        toast.success(result.message || 'getConcepts任务已启动');
-      } else {
-        toast.error(result.message || '启动getConcepts任务失败');
-      }
-    } catch (error) {
-      toast.error('调用getConcepts API失败');
-      console.error('Error calling getConcepts:', error);
-    } finally {
-      setIsLoadingConcepts(false);
-    }
-  };
+  // 移除 isLoadingConcepts 状态和 handleGetConcepts 函数，这些逻辑已经移到 UpdateConceptsButton 组件中
 
   useEffect(() => {
     // WebSocket连接
@@ -89,17 +65,25 @@ const StockMarketMonitor = () => {
       };
       ws.onmessage = (event) => {
         try {
-          const fetchedData: StockDataItem[] = JSON.parse(event.data);
+          const data = JSON.parse(event.data);
           setUpdateTime(new Date().toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }));
-          if (fetchedData && fetchedData.length > 0) {
-            // 调试：检查数据结构
-            console.log('接收到的数据示例:', fetchedData[0]);
-            console.log('数据字段:', Object.keys(fetchedData[0]));
-            console.log('股票代码字段值:', fetchedData[0]["股票代码"]);
-            
+
+          // 检查是否是新的数据格式（columns + values）
+          if (data.columns && data.values) {
+            // 将新格式转换为原来的对象数组格式
+            const fetchedData: StockDataItem[] = data.values.map((row: any[]) => {
+              const item: any = {};
+              data.columns.forEach((col: string, index: number) => {
+                item[col] = row[index];
+              });
+              return item;
+            });
+
+            if (fetchedData && fetchedData.length > 0) {
             // 处理数据逻辑，与原fetch一致
             const concepts: ConceptData = {};
             const conceptNameSet = new Set<string>();
+            const orderedConceptNames: string[] = []; // 保持板块顺序的数组
             const currentStockKeys = new Set<string>();
 
             // 找出最后一个时间点
@@ -109,7 +93,6 @@ const StockMarketMonitor = () => {
               if (!item["板块名称"] || !item["时间"] || !item["名称"]) continue;
               const currentTime = item["时间"];
               const currentPeriod = item["上下午"];
-              console.log(`检查时间点: ${currentPeriod} ${currentTime}`);
               if (currentTime > lastTime || (currentTime === lastTime && currentPeriod > lastPeriod)) {
                 lastTime = currentTime;
                 lastPeriod = currentPeriod;
@@ -123,6 +106,13 @@ const StockMarketMonitor = () => {
               if (!concepts[item["板块名称"]]) {
                 concepts[item["板块名称"]] = { "上午": {}, "下午": {} };
               }
+
+              // 保持板块出现的顺序
+              if (!conceptNameSet.has(item["板块名称"])) {
+                conceptNameSet.add(item["板块名称"]);
+                orderedConceptNames.push(item["板块名称"]);
+              }
+
               const period = item["上下午"];
               const time = item["时间"];
               if (!concepts[item["板块名称"]][period][time]) {
@@ -136,13 +126,10 @@ const StockMarketMonitor = () => {
               // 修改股票key生成逻辑，按"名称+类型"生成，与去重逻辑保持一致
               const isLimit = LIMIT_UP_TYPES.includes(item["类型"]);
               const stockKey = `${item["名称"]}_${item["类型"]}`;
-              console.log(`生成股票key: ${stockKey}, 名称: ${item["名称"]}, 类型: ${item["类型"]}, 涨跌幅: ${item["四舍五入取整"]}, 是否涨停: ${isLimit}`);
               currentStockKeys.add(stockKey);
 
               // 判断是否为最后一个时间点的股票
               const isLastTimeStock = (time === lastTime && period === lastPeriod);
-              console.log(`股票 ${item["名称"]}(${item["类型"]}) 是否为最后时间点股票: ${isLastTimeStock} (时间: ${period} ${time})`);
-
               concepts[item["板块名称"]][period][time].push({
                 name: item["名称"],
                 code: item["股票代码"],
@@ -152,15 +139,82 @@ const StockMarketMonitor = () => {
                 type: item["类型"], // 添加类型字段
                 sign: item["sign"] // 添加sign字段
               });
-              if (item["板块名称"]) {
-                conceptNameSet.add(item["板块名称"]);
-              }
             }
 
             setHasData(true);
             setData(concepts);
-            setConceptNames(Array.from(conceptNameSet));
+            setConceptNames(orderedConceptNames); // 使用有序的板块名称列表
           }
+        } else {
+          // 兼容旧格式（数组对象）
+          const fetchedData: StockDataItem[] = data;
+          if (fetchedData && fetchedData.length > 0) {
+            // 处理数据逻辑，与原fetch一致
+            const concepts: ConceptData = {};
+            const conceptNameSet = new Set<string>();
+            const orderedConceptNames: string[] = []; // 保持板块顺序的数组
+            const currentStockKeys = new Set<string>();
+
+            // 找出最后一个时间点
+            let lastTime = '';
+            let lastPeriod = '';
+            for (const item of fetchedData) {
+              if (!item["板块名称"] || !item["时间"] || !item["名称"]) continue;
+              const currentTime = item["时间"];
+              const currentPeriod = item["上下午"];
+              if (currentTime > lastTime || (currentTime === lastTime && currentPeriod > lastPeriod)) {
+                lastTime = currentTime;
+                lastPeriod = currentPeriod;
+              }
+            }
+
+            console.log(`最后一个时间点: ${lastPeriod} ${lastTime}`);
+
+            for (const item of fetchedData) {
+              if (!item["板块名称"] || !item["时间"] || !item["名称"]) continue;
+              if (!concepts[item["板块名称"]]) {
+                concepts[item["板块名称"]] = { "上午": {}, "下午": {} };
+              }
+
+              // 保持板块出现的顺序
+              if (!conceptNameSet.has(item["板块名称"])) {
+                conceptNameSet.add(item["板块名称"]);
+                orderedConceptNames.push(item["板块名称"]);
+              }
+
+              const period = item["上下午"];
+              const time = item["时间"];
+              if (!concepts[item["板块名称"]][period][time]) {
+                concepts[item["板块名称"]][period][time] = [];
+              }
+              let valueStr = '';
+              if (typeof item["四舍五入取整"] === 'number') {
+                valueStr = item["四舍五入取整"].toString();
+              }
+
+              // 修改股票key生成逻辑，按"名称+类型"生成，与去重逻辑保持一致
+              const isLimit = LIMIT_UP_TYPES.includes(item["类型"]);
+              const stockKey = `${item["名称"]}_${item["类型"]}`;
+              currentStockKeys.add(stockKey);
+
+              // 判断是否为最后一个时间点的股票
+              const isLastTimeStock = (time === lastTime && period === lastPeriod);
+              concepts[item["板块名称"]][period][time].push({
+                name: item["名称"],
+                code: item["股票代码"],
+                value: valueStr,
+                isLimit: isLimit,
+                isNew: isLastTimeStock, // 使用isNew字段标记最后时间点的股票
+                type: item["类型"], // 添加类型字段
+                sign: item["sign"] // 添加sign字段
+              });
+            }
+
+            setHasData(true);
+            setData(concepts);
+            setConceptNames(orderedConceptNames); // 使用有序的板块名称列表
+          }
+        }
         } catch (error) {
           setLoadingMessage('数据解析错误');
           setHasData(false);
@@ -185,10 +239,6 @@ const StockMarketMonitor = () => {
   }, []);
 
   const renderStockInfo = (stocks: StockInfo[]): React.JSX.Element => {
-    // 前端按"名称+类型"去重，与后端保持一致
-    console.log('renderStockInfo 去重前数据量:', stocks.length);
-    console.log('renderStockInfo 去重前数据:', stocks.map(s => `${s.name}(${s.value}, ${s.type || '未知类型'})`));
-
     const uniqueStocksMap = new Map<string, StockInfo>();
     stocks.forEach((stock) => {
       // 用"名称+类型"拼接做唯一key，与后端drop_duplicates逻辑一致
@@ -196,25 +246,23 @@ const StockMarketMonitor = () => {
       const key = `${stock.name}__${typeStr}`;
       uniqueStocksMap.set(key, stock);
     });
-    
+
     // 添加稳定的排序逻辑，按股票名称排序
     const uniqueStocks = Array.from(uniqueStocksMap.values()).sort((a, b) => {
       // 首先按股票名称排序
       const nameCompare = a.name.localeCompare(b.name, 'zh-CN');
       if (nameCompare !== 0) return nameCompare;
-      
+
       // 如果名称相同，按类型排序
       const typeA = a.type || '未知类型';
       const typeB = b.type || '未知类型';
       return typeA.localeCompare(typeB, 'zh-CN');
     });
 
-    console.log('renderStockInfo 去重排序后数据:', uniqueStocks.map(s => `${s.name}(${s.value}, ${s.type || '未知类型'})`));
-
     return (
       <>
         {uniqueStocks.map((stock, index) => (
-          <StockItem 
+          <StockItem
             key={`${stock.name}__${stock.type || '未知类型'}`}
             stock={stock}
             showComma={index > 0}
@@ -229,9 +277,9 @@ const StockMarketMonitor = () => {
     const sortedTimes = Object.keys(timeGroups).sort();
 
     return sortedTimes.map((time, timeIndex) => (
-      <div key={timeIndex} className="mb-1 last:mb-0">
-        <span className="text-gray-600 dark:text-gray-400 text-xs">{time}</span>{' '}
-        <span className="text-xs text-gray-800 dark:text-gray-200">{renderStockInfo(timeGroups[time])}</span>
+      <div key={timeIndex} className="flex mb-1 last:mb-0">
+        <div className="font-bold text-xs">{time}</div>{' '}
+        <div className="flex flex-wrap text-xs">{renderStockInfo(timeGroups[time])}</div>
       </div>
     ));
   };
@@ -240,14 +288,14 @@ const StockMarketMonitor = () => {
     if (currentPage === 'settings') {
       return <SettingsPage />;
     }
-    
+
     if (currentPage === 'picked') {
       return <PickedPage />;
     }
 
     return (
       <div className='min-h-screen bg-gray-50 dark:bg-gray-900'>
-        <div className="mx-auto max-w-7xl p-4">
+        <div className="w-full p-4">
           <div className="relative z-20 items-center justify-between flex font-bold text-gray-800 dark:text-white mb-4">
             <MultiSelect
                   label="板块筛选"
@@ -261,14 +309,7 @@ const StockMarketMonitor = () => {
                 </div>
                 <div>
                 <span className="text-xs mr-2">更新时间：{updateTime}</span>
-                <Button 
-                    onClick={handleGetConcepts}
-                    disabled={isLoadingConcepts}
-                    variant="outline"
-                    size="sm"
-                  >
-                    {isLoadingConcepts ? '更新中...' : '更新概念'}
-                  </Button>
+                <UpdateConceptsButton />
                   </div>
           </div>
           {!hasData && (
@@ -327,8 +368,7 @@ const StockMarketMonitor = () => {
       <div className="flex-1">
         {renderMainContent()}
       </div>
-      <Toaster 
-        position="top-right"
+      <Toaster
         toastOptions={{
           duration: 3000,
           style: {

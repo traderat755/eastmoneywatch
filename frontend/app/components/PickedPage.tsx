@@ -63,15 +63,54 @@ export function PickedPage() {
     }
   };
 
-  // 加载指定股票的板块列表
-  const loadStockSectors = async (stockCode: string) => {
+  // 加载指定股票的所有相关板块（通过搜索API）
+  const loadStockSectors = async (stockCode: string, stockName: string) => {
+    console.log(`开始通过搜索获取股票 ${stockName}(${stockCode}) 的所有相关板块`);
     try {
-      const response = await fetch(`http://localhost:61125/api/concepts/stock-sectors/${stockCode}`);
-      const data = await response.json();
-      if (data.status === 'success') {
-        setStockSectors(data.data);
+      // 先尝试用股票代码搜索
+      let response = await fetch(`http://localhost:61125/api/concepts/search?q=${encodeURIComponent(stockCode)}`);
+      let data = await response.json();
+      
+      // 如果用代码搜索没结果，再用名称搜索
+      if (data.status === 'success' && data.data.length === 0) {
+        response = await fetch(`http://localhost:61125/api/concepts/search?q=${encodeURIComponent(stockName)}`);
+        data = await response.json();
+      }
+      
+      console.log(`搜索 ${stockName}(${stockCode}) 的API响应:`, data);
+      if (data.status === 'success' && data.data.length > 0) {
+        console.log(`搜索返回的所有结果:`, data.data);
+        
+        // 过滤出匹配的股票的所有板块
+        const matchingStocks = data.data.filter((item: ConceptStock) => 
+          item.股票代码 === stockCode || item.股票名称 === stockName
+        );
+        
+        console.log(`匹配的股票记录:`, matchingStocks);
+        
+        // 提取所有板块并去重
+        const sectors: Sector[] = [];
+        const sectorSet = new Set<string>();
+        
+        matchingStocks.forEach((stock: ConceptStock) => {
+          console.log(`处理股票记录:`, stock);
+          if (!sectorSet.has(stock.板块代码)) {
+            console.log(`添加新板块: ${stock.板块名称}(${stock.板块代码})`);
+            sectorSet.add(stock.板块代码);
+            sectors.push({
+              板块代码: stock.板块代码,
+              板块名称: stock.板块名称
+            });
+          } else {
+            console.log(`跳过重复板块: ${stock.板块名称}(${stock.板块代码})`);
+          }
+        });
+        
+        console.log(`最终提取的板块列表:`, sectors);
+        console.log(`成功获取股票 ${stockName} 的 ${sectors.length} 个相关板块:`, sectors);
+        setStockSectors(sectors);
       } else {
-        console.error('加载股票板块列表失败:', data.message);
+        console.error('未找到该股票的相关板块信息');
         setStockSectors([]);
       }
     } catch (error) {
@@ -182,10 +221,12 @@ export function PickedPage() {
 
   // 开始编辑股票
   const startEdit = async (stock: PickedStock) => {
+    console.log(`开始编辑股票:`, stock);
     setEditingStock(stock.股票代码);
     setEditData({ ...stock });
-    // 加载该股票的可选板块
-    await loadStockSectors(stock.股票代码);
+    // 通过搜索API加载该股票的所有相关板块
+    console.log(`即将搜索股票 ${stock.股票名称}(${stock.股票代码}) 的所有相关板块`);
+    await loadStockSectors(stock.股票代码, stock.股票名称);
   };
 
   // 取消编辑
@@ -213,6 +254,11 @@ export function PickedPage() {
     
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
+
+  // 调试：监控stockSectors变化
+  useEffect(() => {
+    console.log('stockSectors状态更新:', stockSectors);
+  }, [stockSectors]);
 
   if (isLoading) {
     return (

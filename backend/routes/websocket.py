@@ -1,6 +1,7 @@
 import os
 import asyncio
 import json
+import math
 from fastapi import APIRouter, WebSocket, HTTPException
 from fastapi.responses import FileResponse
 from services.backend_service import get_watch_status
@@ -23,6 +24,29 @@ async def websocket_changes(websocket: WebSocket):
     print(f"[ws/changes] New WebSocket connection from {websocket.client}")
     await websocket.accept()
     global buffer_queue
+    
+    # Helper function to clean NaN values from data before JSON serialization
+    def clean_nan_values(obj):
+        """Recursively clean NaN and None values from data structure"""
+        if isinstance(obj, dict):
+            return {k: clean_nan_values(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [clean_nan_values(item) for item in obj]
+        elif isinstance(obj, float):
+            # Check for NaN using multiple methods to be safe
+            try:
+                if math.isnan(obj) or obj != obj:
+                    return 0  # Replace NaN with 0
+                else:
+                    return obj
+            except (TypeError, ValueError):
+                # If we can't check for NaN, treat it as a potential NaN
+                return 0
+        elif obj is None:
+            return 0  # Replace None with 0 as well
+        else:
+            return obj
+    
     try:
         while True:
             # 优先从缓冲队列读取
@@ -30,9 +54,14 @@ async def websocket_changes(websocket: WebSocket):
                 if buffer_queue:
                     while not buffer_queue.empty():
                         data = buffer_queue.get_nowait()
-                        await websocket.send_text(json.dumps(data, ensure_ascii=False))
+                        # Handle NaN values by replacing them with 0 or null before JSON serialization
+                        cleaned_data = clean_nan_values(data)
+                        await websocket.send_text(json.dumps(cleaned_data, ensure_ascii=False))
             except Exception as e:
-                await websocket.send_text(json.dumps({"error": str(e)}, ensure_ascii=False))
+                error_msg = {"error": str(e)}
+                # Ensure error messages don't contain NaN values either
+                clean_error = clean_nan_values(error_msg)  
+                await websocket.send_text(json.dumps(clean_error, ensure_ascii=False))
             await asyncio.sleep(2)
 
     except Exception as e:
