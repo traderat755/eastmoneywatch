@@ -1,8 +1,8 @@
 import pandas as pd
-from cache_manager import get_current_concept_df, get_current_picked_df
+from services.pick_service import get_shared_picked_df
 
 
-def apply_sorting(df, uplimit_cache=None, for_frontend=True):
+def apply_sorting(df,concept_df, uplimit_cache=None, for_frontend=True):
     """统一的排序函数：添加概念板块信息并按板块排序（picked_df最前，rising concepts次之，其他concept_df最后）
 
     Args:
@@ -13,11 +13,9 @@ def apply_sorting(df, uplimit_cache=None, for_frontend=True):
     if df.empty:
         return df
 
-    try:
-        # 获取concept_df和picked_df
-        concept_df = get_current_concept_df()
-        picked_df = get_current_picked_df()
+    picked_df = get_shared_picked_df()
 
+    try:
         if concept_df is None or concept_df.empty:
             print("[apply_sorting] concept_df缓存为空，这不应该发生")
             return df

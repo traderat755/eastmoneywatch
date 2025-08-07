@@ -78,19 +78,26 @@ def initialize_backend_services(buffer_queue):
         else:
             # 确保股票代码列被读取为字符串类型
             dtype_dict = {'股票代码': str, '板块代码': str}
-            concept_df = pd.read_csv(concepts_path, dtype=dtype_dict)
-
+            # 读取concepts.csv
+            concepts_df = pd.read_csv(concepts_path, dtype={'板块代码': str, '板块名称': str})
+            print(f"[sidecar] concepts.csv读取完成，长度: {len(concepts_df)}", flush=True)
+            # 读取concept_stocks.csv
+            concept_stocks_path = get_resource_path("static/concept_stocks.csv")
+            if not concept_stocks_path or not os.path.exists(concept_stocks_path):
+                print("[sidecar] concept_stocks.csv文件不存在，服务无法启动", flush=True)
+                raise RuntimeError("concept_stocks.csv文件不存在，无法启动服务")
+            concept_stocks_df = pd.read_csv(concept_stocks_path, dtype={'板块代码': str, '股票代码': str})
+            print(f"[sidecar] concept_stocks.csv读取完成，长度: {len(concept_stocks_df)}", flush=True)
+            # 合并
+            concept_df = pd.merge(concept_stocks_df, concepts_df, on='板块代码', how='left')
+            concept_df = concept_df[['板块代码', '板块名称', '股票代码']]
+            print(f"[sidecar] 合并后concept_df长度: {len(concept_df)}", flush=True)
             # 清理NaN值
             concept_df = concept_df.fillna('')
-
-            if concept_df.empty:
-                print("[sidecar] concepts.csv文件为空，服务无法启动", flush=True)
-                raise RuntimeError("concepts.csv文件为空，无法启动服务")
-
-            print("[sidecar] Successfully loaded concepts data from: " + concepts_path, flush=True)
-            print(f"[sidecar] 原始concept_df长度: {len(concept_df)}", flush=True)
-            print(f"[sidecar] 股票代码列数据类型: {concept_df['股票代码'].dtype}", flush=True)
             print(f"[sidecar] 清理NaN值后的concept_df长度: {len(concept_df)}", flush=True)
+            if concept_df.empty:
+                print("[sidecar] concepts数据合并后为空，服务无法启动", flush=True)
+                raise RuntimeError("concepts数据合并后为空，无法启动服务")
     except Exception as e:
         print(f"[sidecar] Error loading concepts data: {e}", flush=True)
         raise RuntimeError(f"无法加载concepts数据: {e}")
@@ -123,7 +130,7 @@ def initialize_backend_services(buffer_queue):
 
     # 加载picked.csv到内存和共享内存中
     load_picked_data()
-    
+
     # 获取共享内存的picked数据引用
     shared_picked_data = get_shared_picked_data()
 
@@ -140,7 +147,15 @@ def initialize_backend_services(buffer_queue):
                     print(f"[sidecar] 读取当前changes文件传递给worker: {changes_path}", flush=True)
                     current_changes_df = pd.read_csv(changes_path)
                     current_changes_df = current_changes_df.fillna('')
-                    print(f"[sidecar] 读取到changes数据，记录数: {len(current_changes_df)}", flush=True)
+                    # 字段校验
+                    standard_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '板块名称', '四舍五入取整', '上下午', '时间排序', '标识']
+                    df_columns = list(current_changes_df.columns)
+                    if not all(col in df_columns for col in standard_columns):
+                        print(f"[backend_service] changes文件字段不匹配，收到字段: {df_columns}", flush=True)
+                        print(f"[backend_service] 内容预览: {current_changes_df.head(2).to_dict('records') if hasattr(current_changes_df, 'head') else str(current_changes_df)[:200]}", flush=True)
+                        current_changes_df = pd.DataFrame(columns=standard_columns)
+                    else:
+                        print(f"[sidecar] 读取到changes数据，记录数: {len(current_changes_df)}", flush=True)
                 else:
                     print(f"[sidecar] changes文件不存在，传递空DataFrame: {changes_path}", flush=True)
             except Exception as e:
@@ -152,9 +167,10 @@ def initialize_backend_services(buffer_queue):
                 args=(
                     buffer_queue,
                     2,
-                    concept_df.copy() if concept_df is not None else None,
-                    shared_picked_data,  # 传递共享内存引用而不是拷贝
-                    current_changes_df.copy() if current_changes_df is not None else None
+                    concept_df.copy() if concept_df is not None else None,  # initial_concept_df
+                    current_changes_df.copy() if current_changes_df is not None else None,  # initial_changes_df
+                    300,  # batch_interval
+                    shared_picked_data  # shared_picked_data
                 ),
                 daemon=True
             )
@@ -233,6 +249,11 @@ def search_concepts(query):
         concepts_path = get_resource_path("static/concepts.csv")
         if not concepts_path or not os.path.exists(concepts_path):
             return {"status": "error", "message": "概念数据文件不存在"}
+        concepts_df = pd.read_csv(concepts_path)
+        concept_stocks_df = pd.read_csv(get_resource_path("static/concept_stocks.csv"), dtype={'板块代码': str, '股票代码': str})
+        print(f"[sidecar] concept_stocks.csv读取完成，长度: {len(concept_stocks_df)}", flush=True)
+        # 合并
+        concept_df = pd.merge(concept_stocks_df, concepts_df, on='板块代码', how='left')
 
         print(f"[api/concepts/search] 直接从文件读取concepts数据进行搜索: {concepts_path}", flush=True)
 
@@ -240,6 +261,7 @@ def search_concepts(query):
         dtype_dict = {'股票代码': str, '板块代码': str}
         original_concept_df = pd.read_csv(concepts_path, dtype=dtype_dict)
         original_concept_df = original_concept_df.fillna('')
+
 
         print(f"[api/concepts/search] 读取到{len(original_concept_df)}条原始概念数据", flush=True)
 

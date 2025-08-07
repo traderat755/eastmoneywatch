@@ -107,15 +107,15 @@ def add_picked_stock(stock_data):
     try:
         # 转换为字典
         stock_dict = stock_data.dict()
-
         # 检查是否已存在
         if not picked_df.empty and stock_dict['股票代码'] in picked_df['股票代码'].values:
+            print(f"[api/picked] 添加股票失败: 股票已存在于精选列表中", flush=True)
+            print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+            print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
             return {"status": "error", "message": "股票已存在于精选列表中"}
-
         # 添加新股票到内存DataFrame
         new_stock = pd.DataFrame([stock_dict])
         picked_df = pd.concat([new_stock,picked_df], ignore_index=True)
-
         # 同步保存到文件
         picked_path = get_resource_path("static/picked.csv")
         if not picked_path:
@@ -126,17 +126,18 @@ def add_picked_stock(stock_data):
                 static_dir = "static"
             os.makedirs(static_dir, exist_ok=True)
             picked_path = os.path.join(static_dir, "picked.csv")
-
         picked_df.to_csv(picked_path, index=False, encoding='utf-8')
-
         # 同步到共享内存
         _sync_to_shared_memory()
-
         print(f"[api/picked] 添加股票成功: {stock_dict['股票名称']}", flush=True)
+        print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+        print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
         return {"status": "success", "message": "股票添加成功"}
-
     except Exception as e:
         print(f"[api/picked] 添加股票失败: {e}", flush=True)
+        _sync_to_shared_memory()
+        print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+        print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
         return {"status": "error", "message": str(e)}
 
 
@@ -145,81 +146,98 @@ def update_picked_stock(stock_code, stock_data):
     global picked_df
     try:
         if picked_df is None or picked_df.empty:
+            print(f"[api/picked] 更新股票失败: 精选列表为空", flush=True)
+            print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+            print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
             return {"status": "error", "message": "精选列表为空"}
-
         # 查找股票
         stock_index = picked_df[picked_df['股票代码'] == stock_code].index
         if len(stock_index) == 0:
+            print(f"[api/picked] 更新股票失败: 股票不存在于精选列表中", flush=True)
+            print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+            print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
             return {"status": "error", "message": "股票不存在于精选列表中"}
-
         # 更新股票信息
         stock_dict = stock_data.dict()
         for key, value in stock_dict.items():
             if key in picked_df.columns:
                 picked_df.loc[stock_index[0], key] = value
-
         # 同步保存到文件
         picked_path = get_resource_path("static/picked.csv")
         if picked_path:
             picked_df.to_csv(picked_path, index=False, encoding='utf-8')
-
         # 同步到共享内存
         _sync_to_shared_memory()
-
         print(f"[api/picked] 更新股票成功: {stock_code}", flush=True)
+        print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+        print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
         return {"status": "success", "message": "股票更新成功"}
-
     except Exception as e:
         print(f"[api/picked] 更新股票失败: {e}", flush=True)
+        _sync_to_shared_memory()
+        print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+        print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
         return {"status": "error", "message": str(e)}
 
 
-def delete_picked_stock(stock_code):
-    """从精选列表中删除股票"""
+def delete_picked_stock(stock_code_or_sector):
+    """从精选列表中删除股票或整个板块"""
     global picked_df
     try:
         if picked_df is None or picked_df.empty:
+            print(f"[api/picked] 删除失败: 精选列表为空", flush=True)
+            print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+            print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
             return {"status": "error", "message": "精选列表为空"}
-
-        # 检查股票是否存在
-        if stock_code not in picked_df['股票代码'].values:
-            return {"status": "error", "message": "股票不存在于精选列表中"}
-
-        # 删除股票
-        picked_df = picked_df[picked_df['股票代码'] != stock_code]
-
+        # 判断是股票代码还是板块名称
+        if stock_code_or_sector in picked_df['板块名称'].values:
+            # 按板块名称批量删除
+            print(f"[api/picked] 批量删除板块: {stock_code_or_sector}", flush=True)
+            picked_df = picked_df[picked_df['板块名称'] != stock_code_or_sector]
+            msg = f"板块 {stock_code_or_sector} 已删除精选"
+        elif stock_code_or_sector in picked_df['股票代码'].values:
+            # 按股票代码删除
+            print(f"[api/picked] 删除股票: {stock_code_or_sector}", flush=True)
+            picked_df = picked_df[picked_df['股票代码'] != stock_code_or_sector]
+            msg = f"股票 {stock_code_or_sector} 已删除精选"
+        else:
+            print(f"[api/picked] 删除失败: 未找到 {stock_code_or_sector}", flush=True)
+            return {"status": "error", "message": f"未找到 {stock_code_or_sector}"}
         # 同步保存到文件
         picked_path = get_resource_path("static/picked.csv")
         if picked_path:
             picked_df.to_csv(picked_path, index=False, encoding='utf-8')
-
         # 同步到共享内存
         _sync_to_shared_memory()
-
-        print(f"[api/picked] 删除股票成功: {stock_code}", flush=True)
-        return {"status": "success", "message": "股票删除成功"}
-
+        print(f"[api/picked] 删除成功: {stock_code_or_sector}", flush=True)
+        print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+        print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
+        return {"status": "success", "message": msg}
     except Exception as e:
-        print(f"[api/picked] 删除股票失败: {e}", flush=True)
+        print(f"[api/picked] 删除失败: {e}", flush=True)
+        _sync_to_shared_memory()
+        print(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}", flush=True)
+        print(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}", flush=True)
         return {"status": "error", "message": str(e)}
 
 
 def _sync_to_shared_memory():
     """将picked_df同步到共享内存"""
     global picked_df, shared_picked_data
+    print(f"[_sync_to_shared_memory] called, id(shared_picked_data)={id(shared_picked_data)}, picked_df is None? {picked_df is None}", flush=True)
     if shared_picked_data is not None and picked_df is not None:
         try:
             # 清空共享列表
             shared_picked_data['records'][:] = []
-
             # 将DataFrame转换为字典列表并添加到共享内存
             records = picked_df.to_dict('records')
             for record in records:
                 shared_picked_data['records'].append(record)
-
-            print(f"[pick_service] 已同步{len(records)}条记录到共享内存", flush=True)
+            print(f"[_sync_to_shared_memory] 已同步{len(records)}条记录到共享内存, id(shared_picked_data)={id(shared_picked_data)}", flush=True)
         except Exception as e:
-            print(f"[pick_service] 同步到共享内存失败: {e}", flush=True)
+            print(f"[_sync_to_shared_memory] 同步到共享内存失败: {e}", flush=True)
+    else:
+        print(f"[_sync_to_shared_memory] shared_picked_data或picked_df为None，无法同步", flush=True)
 
 
 def get_shared_picked_data():
@@ -240,11 +258,9 @@ def get_shared_picked_df():
     if shared_picked_data is not None and 'records' in shared_picked_data:
         try:
             records = list(shared_picked_data['records'])
+            print(f"[get_shared_picked_df] 共享内存 records 长度: {len(records)} 示例: {records[0] if records else '无'}", flush=True)
             if records:
                 df = pd.DataFrame(records)
-                # 确保数据类型正确
-                df['股票代码'] = df['股票代码'].astype(str)
-                df['板块代码'] = df['板块代码'].astype(str)
                 return df.fillna('')
             else:
                 return pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
@@ -252,4 +268,24 @@ def get_shared_picked_df():
             print(f"[pick_service] 从共享内存构建DataFrame失败: {e}", flush=True)
             return pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
     else:
+        print(f"[get_shared_picked_df] shared_picked_data is None or 'records' 不在其中, type={type(shared_picked_data)}, keys={list(shared_picked_data.keys()) if hasattr(shared_picked_data, 'keys') else '无'}", flush=True)
         return pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
+
+
+def set_shared_picked_data(data):
+    """设置全局 shared_picked_data，供worker进程调用"""
+    global shared_picked_data
+    shared_picked_data = data
+    print(f"[set_shared_picked_data] 设置 shared_picked_data: type={type(shared_picked_data)}, id={id(shared_picked_data)}, keys={list(shared_picked_data.keys()) if hasattr(shared_picked_data, 'keys') else '无'}", flush=True)
+    # 自动补全 records 字段
+    if shared_picked_data is not None and 'records' not in shared_picked_data:
+        try:
+            from multiprocessing import Manager
+            if isinstance(shared_picked_data, dict):
+                shared_picked_data['records'] = []
+            else:
+                # 兼容 Manager().dict()
+                shared_picked_data['records'] = Manager().list()
+            print(f"[set_shared_picked_data] 自动补全 records 字段", flush=True)
+        except Exception as e:
+            print(f"[set_shared_picked_data] 自动补全 records 字段失败: {e}", flush=True)

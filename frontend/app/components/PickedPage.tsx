@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 interface PickedStock {
   股票代码: string;
-  股票名称: string; 
+  股票名称: string;
   板块代码: string;
   板块名称: string;
 }
@@ -30,7 +30,6 @@ export function PickedPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [editingStock, setEditingStock] = useState<string | null>(null);
   const [editData, setEditData] = useState<PickedStock | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   // 加载精选股票列表
@@ -70,28 +69,28 @@ export function PickedPage() {
       // 先尝试用股票代码搜索
       let response = await fetch(`http://localhost:61125/api/concepts/search?q=${encodeURIComponent(stockCode)}`);
       let data = await response.json();
-      
+
       // 如果用代码搜索没结果，再用名称搜索
       if (data.status === 'success' && data.data.length === 0) {
         response = await fetch(`http://localhost:61125/api/concepts/search?q=${encodeURIComponent(stockName)}`);
         data = await response.json();
       }
-      
+
       console.log(`搜索 ${stockName}(${stockCode}) 的API响应:`, data);
       if (data.status === 'success' && data.data.length > 0) {
         console.log(`搜索返回的所有结果:`, data.data);
-        
+
         // 过滤出匹配的股票的所有板块
-        const matchingStocks = data.data.filter((item: ConceptStock) => 
+        const matchingStocks = data.data.filter((item: ConceptStock) =>
           item.股票代码 === stockCode || item.股票名称 === stockName
         );
-        
+
         console.log(`匹配的股票记录:`, matchingStocks);
-        
+
         // 提取所有板块并去重
         const sectors: Sector[] = [];
         const sectorSet = new Set<string>();
-        
+
         matchingStocks.forEach((stock: ConceptStock) => {
           console.log(`处理股票记录:`, stock);
           if (!sectorSet.has(stock.板块代码)) {
@@ -105,7 +104,7 @@ export function PickedPage() {
             console.log(`跳过重复板块: ${stock.板块名称}(${stock.板块代码})`);
           }
         });
-        
+
         console.log(`最终提取的板块列表:`, sectors);
         console.log(`成功获取股票 ${stockName} 的 ${sectors.length} 个相关板块:`, sectors);
         setStockSectors(sectors);
@@ -125,7 +124,7 @@ export function PickedPage() {
       setSearchResults([]);
       return;
     }
-    
+
     try {
       const response = await fetch(`http://localhost:61125/api/concepts/search?q=${encodeURIComponent(query)}`);
       const data = await response.json();
@@ -150,13 +149,12 @@ export function PickedPage() {
         body: JSON.stringify(stock),
       });
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         showMessage('success', '添加成功');
         loadPickedStocks();
         setSearchQuery('');
         setSearchResults([]);
-        setShowAddForm(false);
       } else {
         showMessage('error', '添加失败: ' + data.message);
       }
@@ -176,7 +174,7 @@ export function PickedPage() {
         body: JSON.stringify(stockData),
       });
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         showMessage('success', '更新成功');
         loadPickedStocks();
@@ -195,13 +193,13 @@ export function PickedPage() {
     if (!confirm('确定要删除这只股票吗？')) {
       return;
     }
-    
+
     try {
       const response = await fetch(`http://localhost:61125/api/picked/${stockCode}`, {
         method: 'DELETE',
       });
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         showMessage('success', '删除成功');
         loadPickedStocks();
@@ -251,7 +249,7 @@ export function PickedPage() {
     const timeoutId = setTimeout(() => {
       searchStocks(searchQuery);
     }, 300);
-    
+
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
@@ -275,20 +273,13 @@ export function PickedPage() {
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">精选股票管理</h1>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            添加股票
-          </button>
         </div>
 
         {/* 消息提示 */}
         {message && (
           <div className={`mb-4 p-3 rounded-lg ${
-            message.type === 'success' 
-              ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' 
+            message.type === 'success'
+              ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
               : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
           }`}>
             {message.text}
@@ -296,7 +287,7 @@ export function PickedPage() {
         )}
 
         {/* 添加股票表单 */}
-        {showAddForm && (
+
           <div className="mb-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800">
             <div className="flex items-center mb-4">
               <Search className="mr-2 h-4 w-4 text-gray-500" />
@@ -307,12 +298,6 @@ export function PickedPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
-              <button
-                onClick={() => setShowAddForm(false)}
-                className="ml-2 p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
 
             {/* 搜索结果 */}
@@ -345,7 +330,7 @@ export function PickedPage() {
               </div>
             )}
           </div>
-        )}
+
 
         {/* 精选股票列表 */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -413,7 +398,7 @@ export function PickedPage() {
                             const selectedSector = stockSectors.find(s => s.板块名称 === e.target.value);
                             if (selectedSector) {
                               setEditData(prev => prev ? {
-                                ...prev, 
+                                ...prev,
                                 板块名称: selectedSector.板块名称,
                                 板块代码: selectedSector.板块代码
                               } : null);

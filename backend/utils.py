@@ -119,7 +119,7 @@ def setup_static_directory():
     os.makedirs(static_dir, exist_ok=True)
     return static_dir
 
-def uplimit10jqka(date:str='20231231'):
+def uplimit10jqka(date:str=''):
     '''
     Index(['open_num', 'first_limit_up_time', 'last_limit_up_time', 'code',
        'limit_up_type', 'order_volume', 'is_new', 'limit_up_suc_rate',
@@ -151,10 +151,12 @@ def uplimit10jqka(date:str='20231231'):
     }
 
     response = requests.get(
-        f'https://data.10jqka.com.cn/dataapi/limit_up/limit_up_pool?page=1&limit=15&field=199112,10,9001,330323,330324,330325,9002,330329,133971,133970,1968584,3475914,9003,9004&filter=HS,GEM2STAR&date={date}&order_field=330324&order_type=0&_=1754378627951',
+        f'https://data.10jqka.com.cn/dataapi/limit_up/limit_up_pool?page=1&limit=200&field=199112,10,9001,330323,330324,330325,9002,330329,133971,133970,1968584,3475914,9003,9004&filter=HS,GEM2STAR&date={date}&order_field=330324&order_type=0&_=1754378627951',
         cookies=cookies,
         headers=headers,
     )
     result = response.json()['data']['info']
+
     df = pd.DataFrame(result)
+    df.to_csv('static/uplimit.csv')
     return df

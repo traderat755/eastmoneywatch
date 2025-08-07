@@ -21,7 +21,7 @@ const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
   const copyToClipboard = async (stockCode: string) => {
     try {
       await navigator.clipboard.writeText(stockCode);
-      toast.success(`已复制股票代码: ${stockCode}`);
+      toast.success(`已复制“${stock.name}”代码: ${stockCode}`);
     } catch (err) {
       console.error('复制失败:', err);
       // 降级方案：使用传统方法
@@ -38,20 +38,20 @@ const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
   return (
     <>
       {showComma && ', '}
-      <div
-        className={`${stock.isNew ? 'bg-yellow-100 dark:bg-purple-900' : ''} cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 px-1 rounded transition-colors`}
+      <span
+        className={`${stock.isNew ? 'bg-yellow-100 dark:bg-gray-800' : ''} cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 px-1 rounded transition-colors`}
         onClick={() => copyToClipboard(stock.code)}
         title={`点击复制股票代码 ${stock.code}`}
       >
         {stock.name}
         {stock.sign && (
-          <span className="text-red-600 ml-1">[{stock.sign}]</span>
+          <span className="text-pink-600 ml-1">[{stock.sign}]</span>
         )}
         {' '}
         {(
           stock.isLimit || Math.round(Number(stock.value)) >= 10
         ) ? (
-          <span className="text-red-600 font-medium">
+            <span className="text-pink-600 font-medium">
             {parseFloat(stock.value) > 0 ? '+' + stock.value : stock.value}
             </span>
         ) : (
@@ -59,8 +59,7 @@ const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
             {parseFloat(stock.value) > 0 ? '+' + stock.value : stock.value}
             </span>
         )}
-        <div className='text-xs text-muted-foreground'> {stock.type}</div>
-      </div>
+      </span>
     </>
   );
 };

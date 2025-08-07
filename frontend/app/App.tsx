@@ -6,7 +6,9 @@ import { SettingsPage } from './components/SettingsPage';
 import { PickedPage } from './components/PickedPage';
 import StockItem from './components/StockItem';
 import { UpdateConceptsButton } from './components/UpdateConceptsButton';
-import  { Toaster } from 'react-hot-toast';
+import { Button } from './components/ui/button';
+import  { Toaster, toast } from 'react-hot-toast';
+import SectorButton from './components/SectorButton';
 
 interface StockInfo {
   name: string;
@@ -49,6 +51,9 @@ const StockMarketMonitor = () => {
   const [updateTime, setUpdateTime] = useState<string>('');
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'picked'>('home');
+  const [pickedSectors, setPickedSectors] = useState<string[]>([]);
+  const [pickedLoading, setPickedLoading] = useState(false);
+  const [sectors, setSectors] = useState<{板块名称: string; 板块代码: string}[]>([]);
 
   // 移除 isLoadingConcepts 状态和 handleGetConcepts 函数，这些逻辑已经移到 UpdateConceptsButton 组件中
 
@@ -238,6 +243,147 @@ const StockMarketMonitor = () => {
     };
   }, []);
 
+  useEffect(() => {
+    // 加载已精选板块
+    const fetchPicked = async () => {
+      setPickedLoading(true);
+      try {
+        const res = await fetch('http://localhost:61125/api/picked');
+        const data = await res.json();
+        if (data.status === 'success') {
+          // 只取板块名称去重
+          const names = Array.from(new Set((data.data || []).map((item: any) => item["板块名称"]))).filter(Boolean) as string[];
+          setPickedSectors(names);
+          console.log('[App] 已精选板块:', names);
+        } else {
+          setPickedSectors([]);
+          console.log('[App] 加载精选失败:', data.message);
+        }
+      } catch (e) {
+        setPickedSectors([]);
+        console.log('[App] 加载精选异常:', e);
+      } finally {
+        setPickedLoading(false);
+      }
+    };
+    fetchPicked();
+  }, []);
+
+  useEffect(() => {
+    // 拉取板块映射
+    const fetchSectors = async () => {
+      try {
+        const res = await fetch('http://localhost:61125/api/concepts/sectors');
+        const data = await res.json();
+        if (data.status === 'success') {
+          setSectors(data.data || []);
+          console.log('[App] 板块映射:', data.data);
+        } else {
+          setSectors([]);
+          console.log('[App] 拉取板块映射失败:', data.message);
+        }
+      } catch (e) {
+        setSectors([]);
+        console.log('[App] 拉取板块映射异常:', e);
+      }
+    };
+    fetchSectors();
+  }, []);
+
+  const handleSectorClick = async (sectorName: string) => {
+    const isPicked = pickedSectors.includes(sectorName);
+    if (isPicked) {
+      // 已精选，点击即删除
+      try {
+        console.log(`[handleSectorClick] 删除板块: ${sectorName}`);
+        const response = await fetch(`http://localhost:61125/api/picked/${encodeURIComponent(sectorName)}`, {
+          method: 'DELETE',
+        });
+        const result = await response.json();
+        if (result.status === 'success') {
+          toast.success(result.message);
+          // 刷新精选
+          const res = await fetch('http://localhost:61125/api/picked');
+          const data = await res.json();
+          if (data.status === 'success') {
+            const names = Array.from(new Set((data.data || []).map((item: any) => item["板块名称"]))).filter(Boolean) as string[];
+            setPickedSectors(names);
+            console.log('[App] 已精选板块:', names);
+          }
+        } else {
+          toast.error(result.message || '删除失败');
+        }
+      } catch (error) {
+        console.error('删除板块失败:', error);
+        toast.error('网络错误，请稍后重试');
+      }
+      return;
+    }
+    try {
+      console.log(`点击了板块: ${sectorName}`);
+      const sector = sectors.find(s => s.板块名称 === sectorName);
+      if (!sector) {
+        toast.error('未找到板块代码');
+        return;
+      }
+      // 聚合该板块所有股票
+      const periodData = data[sectorName];
+      if (!periodData) {
+        toast.error('未找到板块数据');
+        return;
+      }
+      let allStocks: StockInfo[] = [];
+      for (const period of ['上午', '下午'] as const) {
+        const timeGroup = periodData[period];
+        for (const time in timeGroup) {
+          allStocks = allStocks.concat(timeGroup[time]);
+        }
+      }
+      if (allStocks.length === 0) {
+        toast.error('该板块无股票数据');
+        return;
+      }
+      // 找到涨幅最大的股票
+      const maxStock = allStocks.reduce((max, cur) => {
+        const v1 = Number(max.value) || -Infinity;
+        const v2 = Number(cur.value) || -Infinity;
+        return v2 > v1 ? cur : max;
+      }, allStocks[0]);
+      console.log('[handleSectorClick] 板块所有股票:', allStocks);
+      console.log('[handleSectorClick] 最高涨幅股票:', maxStock);
+      // POST到/api/picked
+      const response = await fetch('http://localhost:61125/api/picked', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          股票代码: maxStock.code,
+          股票名称: maxStock.name,
+          板块代码: sector.板块代码,
+          板块名称: sector.板块名称,
+        }),
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        toast.success(result.message);
+        // 刷新精选
+        const res = await fetch('http://localhost:61125/api/picked');
+        const data = await res.json();
+        if (data.status === 'success') {
+          const names = Array.from(new Set((data.data || []).map((item: any) => item["板块名称"]))).filter(Boolean) as string[];
+          setPickedSectors(names);
+          console.log('[App] 已精选板块:', names);
+        }
+      } else {
+        toast.error(result.message || '添加失败');
+      }
+    } catch (error) {
+      console.error('添加板块失败:', error);
+      toast.error('网络错误，请稍后重试');
+    }
+  };
+
   const renderStockInfo = (stocks: StockInfo[]): React.JSX.Element => {
     const uniqueStocksMap = new Map<string, StockInfo>();
     stocks.forEach((stock) => {
@@ -277,9 +423,9 @@ const StockMarketMonitor = () => {
     const sortedTimes = Object.keys(timeGroups).sort();
 
     return sortedTimes.map((time, timeIndex) => (
-      <div key={timeIndex} className="flex mb-1 last:mb-0">
-        <div className="font-bold text-xs">{time}</div>{' '}
-        <div className="flex flex-wrap text-xs">{renderStockInfo(timeGroups[time])}</div>
+      <div key={timeIndex} className="mb-1 last:mb-0">
+        <span className="font-bold text-xs">{time}</span>{' '}
+        <span className="flex-wrap text-xs">{renderStockInfo(timeGroups[time])}</span>
       </div>
     ));
   };
@@ -341,7 +487,12 @@ const StockMarketMonitor = () => {
                       data[conceptName] && (
                         <TableRow key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                           <TableCell className="font-semibold align-top text-gray-800 dark:text-gray-200 border-r dark:border-gray-600 p-3">
-                            {conceptName}
+                            <SectorButton
+                              sectorName={conceptName}
+                              isPicked={pickedSectors.includes(conceptName)}
+                              loading={pickedLoading}
+                              onClick={handleSectorClick}
+                            />
                           </TableCell>
                           <TableCell className="align-top border-r dark:border-gray-600 p-3 text-left">
                             {renderPeriodContent(conceptName, "上午")}

@@ -54,25 +54,35 @@ def prepareChanges(current_date:str):
     info_df = df['相关信息'].str.split(',', expand=True)
     if info_df.shape[1] >= 3:
         df['涨跌幅'] = pd.to_numeric(info_df[0], errors='coerce')
-    df['涨跌幅'] = df.apply(lambda x: 0.3 if x['类型'] == '封涨停板' and x['代码'].startswith('8') else 
-                             0.2 if x['类型'] == '封涨停板' and (x['代码'].startswith('300') or x['代码'].startswith('688')) else 
+    df['涨跌幅'] = df.apply(lambda x: 0.3 if x['类型'] == '封涨停板' and x['代码'].startswith('8') else
+                             0.2 if x['类型'] == '封涨停板' and (x['代码'].startswith('300') or x['代码'].startswith('688')) else
                              0.1, axis=1)
     df = df[(df['涨跌幅'] < 0.31) & ((df['涨跌幅'] >= 0.05) | (df['涨跌幅'] <= -0.05))]
     # 读取板块概念数据
     static_dir = setup_static_directory()
     concepts_path = os.path.join(static_dir, "concepts.csv")
+    concept_stocks_path = os.path.join(static_dir, "static/concept_stocks.csv")
     print(f'[prepare] 读取板块概念文件: {concepts_path}')
 
     # 初始化板块名称列
     df['板块名称'] = '未知板块'
 
-    if os.path.exists(concepts_path):
+    if os.path.exists(concepts_path) and os.path.exists(concept_stocks_path):
         concepts_df = pd.read_csv(concepts_path)
+        concept_stocks_df = pd.read_csv(concept_stocks_path, dtype={'板块代码': str, '股票代码': str})
+        print(f"[sidecar] concept_stocks.csv读取完成，长度: {len(concept_stocks_df)}", flush=True)
+        # 合并
+        concept_df = pd.merge(concept_stocks_df, concepts_df, on='板块代码', how='left')
+        concept_df = concept_df[['板块代码', '板块名称', '股票代码']]
+        print(f"[sidecar] 合并后concept_df长度: {len(concept_df)}", flush=True)
+        # 清理NaN值
+        concept_df = concept_df.fillna('')
+
         print(f'[prepare] 板块概念数据列: {concepts_df.columns.tolist()}')
         print(f'[prepare] 板块概念数据样例:\n{concepts_df.head()}')
 
         # 创建股票名称到板块的映射
-        stock_to_sector_map = dict(zip(concepts_df['股票名称'], concepts_df['板块名称']))
+        stock_to_sector_map = dict(zip(concepts_df['股票代码'], concepts_df['板块名称']))
 
         # 为df添加板块信息
         df['板块名称'] = df['名称'].map(stock_to_sector_map)
@@ -118,13 +128,13 @@ def prepareChanges(current_date:str):
 
     # 保存到CSV，使用与queue一致的路径和命名规则
     uplimit_df = uplimit10jqka(current_date)
-    
+
     # 创建股票代码到high_days的映射
     code_to_high_days_map = dict(zip(uplimit_df['code'].astype(str), uplimit_df['high_days']))
-    
+
     # 为output_df添加high_days列
     output_df['标识'] = output_df['股票代码'].map(code_to_high_days_map)
-    
+
     # 处理未找到high_days的股票，填充空值
     missing_high_days_count = output_df['标识'].isna().sum()
     if missing_high_days_count > 0:
