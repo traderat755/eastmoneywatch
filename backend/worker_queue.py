@@ -8,7 +8,7 @@ from cache_manager import update_concept_df_cache, update_picked_df_cache
 from data_processor import apply_sorting
 
 
-def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, initial_changes_df=None, batch_interval=300):
+def worker(queue, interval=3, initial_concept_df=None, shared_picked_data=None, initial_changes_df=None, batch_interval=300):
     print("[worker_queue] 启动，推送到主进程Queue并定时批量写入磁盘")
 
     # 设置静态目录
@@ -21,12 +21,25 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, i
     else:
         print("[worker] 未传递concept_df，缓存可能为空")
 
-    # 初始化picked数据缓存，只使用从backend_service传递的初始数据
-    if initial_picked_df is not None and not initial_picked_df.empty:
-        update_picked_df_cache(initial_picked_df)
-        print(f"[worker] 使用传递的picked_df初始化缓存，记录数: {len(initial_picked_df)}")
+    # 初始化picked数据，优先使用共享内存
+    if shared_picked_data is not None:
+        # 从共享内存构建 DataFrame
+        try:
+            if 'records' in shared_picked_data and shared_picked_data['records']:
+                records = list(shared_picked_data['records'])
+                initial_picked_df = pd.DataFrame(records)
+                # 确保数据类型正确
+                initial_picked_df['股票代码'] = initial_picked_df['股票代码'].astype(str)
+                initial_picked_df['板块代码'] = initial_picked_df['板块代码'].astype(str)
+                initial_picked_df = initial_picked_df.fillna('')
+                update_picked_df_cache(initial_picked_df)
+                print(f"[worker] 使用共享内存初始化picked数据，记录数: {len(initial_picked_df)}")
+            else:
+                print("[worker] 共享内存中picked数据为空")
+        except Exception as e:
+            print(f"[worker] 从共享内存构建picked数据失败: {e}")
     else:
-        print("[worker] 未传递picked_df或picked_df为空")
+        print("[worker] 未传递共享内存数据")
 
     # 获取当前交易日
     current_date = get_latest_trade_date()
@@ -109,6 +122,25 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, i
                 # 使用缓存的交易日
                 current_date = last_date
 
+
+            # 定期同步共享内存中的picked数据到本地缓存（每次循环都检查）
+            if shared_picked_data is not None:
+                try:
+                    if 'records' in shared_picked_data and shared_picked_data['records']:
+                        records = list(shared_picked_data['records'])
+                        updated_picked_df = pd.DataFrame(records)
+                        # 确保数据类型正确
+                        updated_picked_df['股票代码'] = updated_picked_df['股票代码'].astype(str)
+                        updated_picked_df['板块代码'] = updated_picked_df['板块代码'].astype(str)
+                        updated_picked_df = updated_picked_df.fillna('')
+                        update_picked_df_cache(updated_picked_df)
+                        # print(f"[worker] 已同步共享内存中的picked数据到缓存，记录数: {len(updated_picked_df)}")
+                    else:
+                        # 如果共享内存为空，清空本地缓存
+                        update_picked_df_cache(pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称']))
+                        # print("[worker] 共享内存中picked数据为空，已清空本地缓存")
+                except Exception as e:
+                    print(f"[worker] 同步共享内存picked数据失败: {e}")
 
             # 检查是否为交易日且在交易时间内
             if is_trading_time():

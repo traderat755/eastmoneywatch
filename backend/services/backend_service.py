@@ -4,7 +4,7 @@ import subprocess
 import pandas as pd
 from multiprocessing import Process
 from utils import get_resource_path
-from services.pick_service import load_picked_data, get_current_picked_df
+from services.pick_service import load_picked_data, get_shared_picked_data
 
 
 def clean_nan_values(records):
@@ -121,17 +121,18 @@ def initialize_backend_services(buffer_queue):
     except Exception as e:
         print(f"[sidecar] 检查changes文件或运行 prepareChanges 失败: {e}", flush=True)
 
-    # 加载picked.csv到内存中
+    # 加载picked.csv到内存和共享内存中
     load_picked_data()
+    
+    # 获取共享内存的picked数据引用
+    shared_picked_data = get_shared_picked_data()
 
     # 启动 worker_queue 进程，实时写入队列
     # 只有在第一次初始化或进程不存在时才启动
     if get_changes_proc is None or not get_changes_proc.is_alive():
         try:
             from worker_queue import worker as changes_worker
-            # 传递concept_df、picked_df和当前changes数据给worker进程
-            current_picked_df = get_current_picked_df()
-            
+            # 传递concept_df、shared_picked_data和当前changes数据给worker进程
             # 读取当前的changes文件数据
             current_changes_df = None
             try:
@@ -145,16 +146,16 @@ def initialize_backend_services(buffer_queue):
             except Exception as e:
                 print(f"[sidecar] 读取changes文件失败: {e}", flush=True)
                 current_changes_df = None
-            
+
             get_changes_proc = Process(
-                target=changes_worker, 
+                target=changes_worker,
                 args=(
-                    buffer_queue, 
-                    2, 
-                    concept_df.copy() if concept_df is not None else None, 
-                    current_picked_df.copy() if current_picked_df is not None else None,
+                    buffer_queue,
+                    2,
+                    concept_df.copy() if concept_df is not None else None,
+                    shared_picked_data,  # 传递共享内存引用而不是拷贝
                     current_changes_df.copy() if current_changes_df is not None else None
-                ), 
+                ),
                 daemon=True
             )
             get_changes_proc.start()

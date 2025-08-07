@@ -1,6 +1,7 @@
 import os
 import sys
 import pandas as pd
+from multiprocessing import Manager
 from utils import get_resource_path, get_data_dir
 
 
@@ -24,13 +25,28 @@ def clean_nan_values(records):
     return cleaned_records
 
 
-# Global variable for picked data
+# Global variables for picked data
 picked_df = None
+shared_picked_manager = None
+shared_picked_data = None
+
+
+def init_shared_picked_data():
+    """初始化共享内存管理器"""
+    global shared_picked_manager, shared_picked_data
+    if shared_picked_manager is None:
+        shared_picked_manager = Manager()
+        shared_picked_data = shared_picked_manager.dict()
+        # 初始化空的共享数据结构
+        shared_picked_data['records'] = shared_picked_manager.list()
 
 
 def load_picked_data():
-    """加载picked.csv到内存中"""
-    global picked_df
+    """加载picked.csv到内存和共享内存中"""
+    global picked_df, shared_picked_data
+
+    # 初始化共享内存
+    init_shared_picked_data()
     try:
         picked_path = get_resource_path("static/picked.csv")
         if picked_path and os.path.exists(picked_path):
@@ -45,13 +61,22 @@ def load_picked_data():
             print(f"[pick_service] 加载picked.csv到内存成功，共{len(picked_df)}条记录", flush=True)
             print(f"[pick_service] picked.csv字段: {list(picked_df.columns)}", flush=True)
             print(f"[pick_service] picked.csv股票代码列数据类型: {picked_df['股票代码'].dtype}", flush=True)
+
+            # 同步到共享内存
+            _sync_to_shared_memory()
         else:
             print("[pick_service] 未发现picked.csv文件，创建空的picked_df", flush=True)
             picked_df = pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
 
+            # 同步到共享内存
+            _sync_to_shared_memory()
+
     except Exception as e:
         print(f"[pick_service] 处理picked.csv时出错: {e}", flush=True)
         picked_df = pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
+
+        # 同步到共享内存
+        _sync_to_shared_memory()
 
 
 def get_picked_stocks():
@@ -89,7 +114,7 @@ def add_picked_stock(stock_data):
 
         # 添加新股票到内存DataFrame
         new_stock = pd.DataFrame([stock_dict])
-        picked_df = pd.concat([picked_df, new_stock], ignore_index=True)
+        picked_df = pd.concat([new_stock,picked_df], ignore_index=True)
 
         # 同步保存到文件
         picked_path = get_resource_path("static/picked.csv")
@@ -103,6 +128,9 @@ def add_picked_stock(stock_data):
             picked_path = os.path.join(static_dir, "picked.csv")
 
         picked_df.to_csv(picked_path, index=False, encoding='utf-8')
+
+        # 同步到共享内存
+        _sync_to_shared_memory()
 
         print(f"[api/picked] 添加股票成功: {stock_dict['股票名称']}", flush=True)
         return {"status": "success", "message": "股票添加成功"}
@@ -135,6 +163,9 @@ def update_picked_stock(stock_code, stock_data):
         if picked_path:
             picked_df.to_csv(picked_path, index=False, encoding='utf-8')
 
+        # 同步到共享内存
+        _sync_to_shared_memory()
+
         print(f"[api/picked] 更新股票成功: {stock_code}", flush=True)
         return {"status": "success", "message": "股票更新成功"}
 
@@ -162,6 +193,9 @@ def delete_picked_stock(stock_code):
         if picked_path:
             picked_df.to_csv(picked_path, index=False, encoding='utf-8')
 
+        # 同步到共享内存
+        _sync_to_shared_memory()
+
         print(f"[api/picked] 删除股票成功: {stock_code}", flush=True)
         return {"status": "success", "message": "股票删除成功"}
 
@@ -170,7 +204,52 @@ def delete_picked_stock(stock_code):
         return {"status": "error", "message": str(e)}
 
 
+def _sync_to_shared_memory():
+    """将picked_df同步到共享内存"""
+    global picked_df, shared_picked_data
+    if shared_picked_data is not None and picked_df is not None:
+        try:
+            # 清空共享列表
+            shared_picked_data['records'][:] = []
+
+            # 将DataFrame转换为字典列表并添加到共享内存
+            records = picked_df.to_dict('records')
+            for record in records:
+                shared_picked_data['records'].append(record)
+
+            print(f"[pick_service] 已同步{len(records)}条记录到共享内存", flush=True)
+        except Exception as e:
+            print(f"[pick_service] 同步到共享内存失败: {e}", flush=True)
+
+
+def get_shared_picked_data():
+    """获取共享内存中的picked数据，供外部进程使用"""
+    global shared_picked_data
+    return shared_picked_data
+
+
 def get_current_picked_df():
     """获取当前内存中的picked_df，供worker进程使用"""
     global picked_df
     return picked_df
+
+
+def get_shared_picked_df():
+    """从共享内存构建picked_df，供worker进程使用"""
+    global shared_picked_data
+    if shared_picked_data is not None and 'records' in shared_picked_data:
+        try:
+            records = list(shared_picked_data['records'])
+            if records:
+                df = pd.DataFrame(records)
+                # 确保数据类型正确
+                df['股票代码'] = df['股票代码'].astype(str)
+                df['板块代码'] = df['板块代码'].astype(str)
+                return df.fillna('')
+            else:
+                return pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
+        except Exception as e:
+            print(f"[pick_service] 从共享内存构建DataFrame失败: {e}", flush=True)
+            return pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
+    else:
+        return pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
