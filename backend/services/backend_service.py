@@ -129,9 +129,34 @@ def initialize_backend_services(buffer_queue):
     if get_changes_proc is None or not get_changes_proc.is_alive():
         try:
             from worker_queue import worker as changes_worker
-            # 传递concept_df和picked_df给worker进程
+            # 传递concept_df、picked_df和当前changes数据给worker进程
             current_picked_df = get_current_picked_df()
-            get_changes_proc = Process(target=changes_worker, args=(buffer_queue, 2, concept_df.copy() if concept_df is not None else None, current_picked_df.copy() if current_picked_df is not None else None), daemon=True)
+            
+            # 读取当前的changes文件数据
+            current_changes_df = None
+            try:
+                if os.path.exists(changes_path):
+                    print(f"[sidecar] 读取当前changes文件传递给worker: {changes_path}", flush=True)
+                    current_changes_df = pd.read_csv(changes_path)
+                    current_changes_df = current_changes_df.fillna('')
+                    print(f"[sidecar] 读取到changes数据，记录数: {len(current_changes_df)}", flush=True)
+                else:
+                    print(f"[sidecar] changes文件不存在，传递空DataFrame: {changes_path}", flush=True)
+            except Exception as e:
+                print(f"[sidecar] 读取changes文件失败: {e}", flush=True)
+                current_changes_df = None
+            
+            get_changes_proc = Process(
+                target=changes_worker, 
+                args=(
+                    buffer_queue, 
+                    2, 
+                    concept_df.copy() if concept_df is not None else None, 
+                    current_picked_df.copy() if current_picked_df is not None else None,
+                    current_changes_df.copy() if current_changes_df is not None else None
+                ), 
+                daemon=True
+            )
             get_changes_proc.start()
             print("[sidecar] 已启动 worker_queue 子进程", flush=True)
         except Exception as e:

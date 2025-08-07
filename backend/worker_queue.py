@@ -8,7 +8,7 @@ from cache_manager import update_concept_df_cache, update_picked_df_cache
 from data_processor import apply_sorting
 
 
-def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, batch_interval=300):
+def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, initial_changes_df=None, batch_interval=300):
     print("[worker_queue] 启动，推送到主进程Queue并定时批量写入磁盘")
 
     # 设置静态目录
@@ -21,6 +21,7 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, b
     else:
         print("[worker] 未传递concept_df，缓存可能为空")
 
+    # 初始化picked数据缓存，只使用从backend_service传递的初始数据
     if initial_picked_df is not None and not initial_picked_df.empty:
         update_picked_df_cache(initial_picked_df)
         print(f"[worker] 使用传递的picked_df初始化缓存，记录数: {len(initial_picked_df)}")
@@ -31,24 +32,18 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, b
     current_date = get_latest_trade_date()
     changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
     print(f"[worker_queue] 当日changes文件路径: {changes_path}")
-    print(f"[worker_queue] 检查changes文件是否存在: {changes_path} -> {os.path.exists(changes_path)}")
 
-    # 启动时先读取当日的changes.csv文件
-    if os.path.exists(changes_path):
-        print(f"[worker_queue] changes文件存在，准备读取: {changes_path}")
-        try:
-            master_df = pd.read_csv(changes_path)
-            print(f"[worker_queue] 读取到当日已存在的changes数据，记录数: {len(master_df)}")
+    # 初始化master_df，使用从backend_service传递的初始数据
+    if initial_changes_df is not None and not initial_changes_df.empty:
+        master_df = initial_changes_df.copy()
+        print(f"[worker_queue] 使用传递的changes数据初始化master_df，记录数: {len(master_df)}")
 
-            # 应用与concept_df相同的排序（使用当前最新的concept_df）
-            if not master_df.empty:
-                master_df = apply_sorting(master_df, for_frontend=False)
-                print(f"[worker_queue] 已对现有数据应用排序")
-        except Exception as e:
-            print(f"[worker_queue] 读取当日changes.csv失败: {e}")
-            master_df = pd.DataFrame()
+        # 应用排序
+        if not master_df.empty:
+            master_df = apply_sorting(master_df, for_frontend=False)
+            print(f"[worker_queue] 已对传递的数据应用排序")
     else:
-        print(f"[worker_queue] changes文件不存在: {changes_path}")
+        print("[worker_queue] 未传递changes数据，初始化为空DataFrame")
         master_df = pd.DataFrame()
 
     # 启动时，将现有数据推送到队列
@@ -62,9 +57,9 @@ def worker(queue, interval=3, initial_concept_df=None, initial_picked_df=None, b
             "values": frontend_df.values.tolist()
         }
         queue.put(initial_data)
-        print(f"[worker_queue] 已将当日现有数据推送到队列")
+        print(f"[worker_queue] 已将初始数据推送到队列")
     else:
-        print(f"[worker_queue] 现有数据为空，不推送到队列")
+        print(f"[worker_queue] 初始数据为空，不推送到队列")
 
 
     last_write = time.time()
