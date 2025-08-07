@@ -164,7 +164,7 @@ def getChanges():
 
         # 创建基础输出DataFrame，只包含原始股票异动数据
         html_df = output_df[['股票代码', '时间', '名称', '相关信息', '类型', '四舍五入取整']].copy()
-        
+
         # 确保股票代码不为空
         print(f"[getChanges] 处理后包含股票代码的记录数: {html_df['股票代码'].notna().sum()}/{len(html_df)}")
         if html_df['股票代码'].isna().any():
@@ -178,8 +178,8 @@ def getChanges():
         html_df['上下午'] = html_df['时间'].apply(am_pm_col)
 
         # 只在内存处理和去重，改为按"名称+类型"去重
-        html_df = html_df.drop_duplicates(subset=['名称', '类型'], keep='last')
-        html_df = html_df.drop_duplicates(subset=['名称', '时间'], keep='last')
+        html_df = html_df.drop_duplicates(subset=['股票代码', '类型'], keep='last')
+        html_df = html_df.drop_duplicates(subset=['股票代码', '时间'], keep='last')
 
         return html_df
 

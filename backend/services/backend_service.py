@@ -3,7 +3,8 @@ import sys
 import subprocess
 import pandas as pd
 from multiprocessing import Process
-from utils import get_resource_path, get_data_dir
+from utils import get_resource_path
+from services.pick_service import load_picked_data, get_current_picked_df
 
 
 def clean_nan_values(records):
@@ -28,7 +29,6 @@ def clean_nan_values(records):
 
 # Global variables
 concept_df = None
-picked_df = None  # 内存中的picked数据，避免频繁读写文件
 get_concepts_proc = None
 get_changes_proc = None
 initialization_completed = False
@@ -36,7 +36,7 @@ initialization_completed = False
 
 def initialize_backend_services(buffer_queue):
     """初始化后端服务，启动必要的子进程"""
-    global concept_df, picked_df, get_concepts_proc, get_changes_proc, initialization_completed
+    global concept_df, get_concepts_proc, get_changes_proc, initialization_completed
 
     print("[sidecar] 开始初始化后端服务...", flush=True)
 
@@ -51,7 +51,7 @@ def initialize_backend_services(buffer_queue):
             ], cwd=os.path.dirname(backend_dir))
             getConcepts_started = True
             print("[sidecar] 启动时检测到缺少 concepts.csv，已自动调用 getConcepts 子进程", flush=True)
-            
+
             # 等待getConcepts完成
             print("[sidecar] 等待 getConcepts 完成...", flush=True)
             return_code = get_concepts_proc.wait()
@@ -101,7 +101,7 @@ def initialize_backend_services(buffer_queue):
         static_dir = setup_static_directory()
         current_date = get_latest_trade_date()
         changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
-        
+
         if os.path.exists(changes_path):
             print(f"[sidecar] 检测到当天的changes文件已存在: {changes_path}，跳过prepareChanges", flush=True)
         else:
@@ -121,47 +121,23 @@ def initialize_backend_services(buffer_queue):
     except Exception as e:
         print(f"[sidecar] 检查changes文件或运行 prepareChanges 失败: {e}", flush=True)
 
-    # 加载picked.csv到内存中并重新排序concept_df
-    try:
-        picked_path = get_resource_path("static/picked.csv")
-        if picked_path and os.path.exists(picked_path):
-            print(f"[sidecar] 发现picked.csv文件: {picked_path}", flush=True)
-            # 确保股票代码列被读取为字符串类型
-            dtype_dict = {'股票代码': str, '板块代码': str}
-            picked_df = pd.read_csv(picked_path, dtype=dtype_dict)
+    # 加载picked.csv到内存中
+    load_picked_data()
 
-            # 清理NaN值
-            picked_df = picked_df.fillna('')
-
-            print(f"[sidecar] 加载picked.csv到内存成功，共{len(picked_df)}条记录", flush=True)
-            print(f"[sidecar] picked.csv字段: {list(picked_df.columns)}", flush=True)
-            print(f"[sidecar] picked.csv股票代码列数据类型: {picked_df['股票代码'].dtype}", flush=True)
-        else:
-            print("[sidecar] 未发现picked.csv文件，创建空的picked_df", flush=True)
-            picked_df = pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
-
-        # 更新worker进程中的concept_df和picked_df缓存
-        from get_changes_worker_queue import update_concept_df_cache, update_picked_df_cache
-        update_concept_df_cache(concept_df.copy())
-        update_picked_df_cache(picked_df.copy())
-
-    except Exception as e:
-        print(f"[sidecar] 处理picked.csv时出错: {e}", flush=True)
-        picked_df = pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
-
-    # 启动 get_changes_worker_queue 进程，实时写入队列
+    # 启动 worker_queue 进程，实时写入队列
     # 只有在第一次初始化或进程不存在时才启动
     if get_changes_proc is None or not get_changes_proc.is_alive():
         try:
-            from get_changes_worker_queue import worker as changes_worker
+            from worker_queue import worker as changes_worker
             # 传递concept_df和picked_df给worker进程
-            get_changes_proc = Process(target=changes_worker, args=(buffer_queue, 2, concept_df.copy() if concept_df is not None else None, picked_df.copy() if picked_df is not None else None), daemon=True)
+            current_picked_df = get_current_picked_df()
+            get_changes_proc = Process(target=changes_worker, args=(buffer_queue, 2, concept_df.copy() if concept_df is not None else None, current_picked_df.copy() if current_picked_df is not None else None), daemon=True)
             get_changes_proc.start()
-            print("[sidecar] 已启动 get_changes_worker_queue 子进程", flush=True)
+            print("[sidecar] 已启动 worker_queue 子进程", flush=True)
         except Exception as e:
-            print(f"[sidecar] 启动 get_changes_worker_queue 子进程失败: {e}", flush=True)
+            print(f"[sidecar] 启动 worker_queue 子进程失败: {e}", flush=True)
     else:
-        print("[sidecar] get_changes_worker_queue 子进程已在运行，跳过启动", flush=True)
+        print("[sidecar] worker_queue 子进程已在运行，跳过启动", flush=True)
 
     initialization_completed = True
     print("[sidecar] 后端服务初始化完成", flush=True)
@@ -198,165 +174,27 @@ def queue_get_concepts():
 
 
 def reload_concept_df():
-    """重新加载concept_df并更新worker缓存"""
-    global concept_df, picked_df
+    """重新加载concept_df"""
+    global concept_df
     try:
         concepts_path = get_resource_path("static/concepts.csv")
         if not concepts_path or not os.path.exists(concepts_path):
             print("[reload_concept_df] concepts.csv文件不存在", flush=True)
             return {"status": "error", "message": "concepts.csv文件不存在"}
-        
+
         # 重新加载concepts数据
         dtype_dict = {'股票代码': str, '板块代码': str}
         concept_df = pd.read_csv(concepts_path, dtype=dtype_dict)
         concept_df = concept_df.fillna('')
-        
+
         print(f"[reload_concept_df] 重新加载concept_df成功，记录数: {len(concept_df)}", flush=True)
-        
-        # 更新worker进程中的concept_df缓存
-        from get_changes_worker_queue import update_concept_df_cache
-        update_concept_df_cache(concept_df.copy())
-        print("[reload_concept_df] 已更新worker进程中的concept_df缓存", flush=True)
-        
+
         return {"status": "success", "message": "概念数据重新加载成功"}
-        
+
     except Exception as e:
         print(f"[reload_concept_df] 重新加载concept_df失败: {e}", flush=True)
         return {"status": "error", "message": str(e)}
 
-
-def get_picked_stocks():
-    """获取选中的股票列表"""
-    global picked_df
-    try:
-        if picked_df is None or picked_df.empty:
-            print("[api/picked] picked_df为空", flush=True)
-            return {"status": "success", "data": []}
-
-        print(f"[api/picked] 获取选中股票列表，共{len(picked_df)}条记录", flush=True)
-
-        # 转换为字典并清理NaN值
-        records = picked_df.to_dict('records')
-        records = clean_nan_values(records)
-
-        print(f"[api/picked] 返回数据记录数: {len(records)}", flush=True)
-        return {"status": "success", "data": records}
-
-    except Exception as e:
-        print(f"[api/picked] 获取选中股票列表失败: {e}", flush=True)
-        return {"status": "error", "message": str(e)}
-
-
-def add_picked_stock(stock_data):
-    """添加股票到精选列表"""
-    global picked_df
-    try:
-        # 转换为字典
-        stock_dict = stock_data.dict()
-
-        # 检查是否已存在
-        if not picked_df.empty and stock_dict['股票代码'] in picked_df['股票代码'].values:
-            return {"status": "error", "message": "股票已存在于精选列表中"}
-
-        # 添加新股票到内存DataFrame
-        new_stock = pd.DataFrame([stock_dict])
-        picked_df = pd.concat([picked_df, new_stock], ignore_index=True)
-
-        # 同步保存到文件
-        picked_path = get_resource_path("static/picked.csv")
-        if not picked_path:
-            # 如果文件不存在，创建目录并设置路径
-            if hasattr(sys, '_MEIPASS'):
-                static_dir = os.path.join(get_data_dir(), "static")
-            else:
-                static_dir = "static"
-            os.makedirs(static_dir, exist_ok=True)
-            picked_path = os.path.join(static_dir, "picked.csv")
-
-        picked_df.to_csv(picked_path, index=False, encoding='utf-8')
-
-        # 更新worker进程中的picked_df缓存
-        from get_changes_worker_queue import update_picked_df_cache
-        update_picked_df_cache(picked_df.copy())
-
-        print(f"[api/picked] 添加股票成功: {stock_dict['股票名称']}", flush=True)
-        return {"status": "success", "message": "股票添加成功"}
-
-    except Exception as e:
-        print(f"[api/picked] 添加股票失败: {e}", flush=True)
-        return {"status": "error", "message": str(e)}
-
-
-def update_picked_stock(stock_code, stock_data):
-    """更新精选列表中的股票信息"""
-    global picked_df
-    try:
-        if picked_df is None or picked_df.empty:
-            return {"status": "error", "message": "精选列表为空"}
-
-        # 查找股票
-        stock_index = picked_df[picked_df['股票代码'] == stock_code].index
-        if len(stock_index) == 0:
-            return {"status": "error", "message": "股票不存在于精选列表中"}
-
-        # 更新股票信息
-        stock_dict = stock_data.dict()
-        for key, value in stock_dict.items():
-            if key in picked_df.columns:
-                picked_df.loc[stock_index[0], key] = value
-
-        # 同步保存到文件
-        picked_path = get_resource_path("static/picked.csv")
-        if picked_path:
-            picked_df.to_csv(picked_path, index=False, encoding='utf-8')
-
-        # 更新worker进程中的picked_df缓存
-        from get_changes_worker_queue import update_picked_df_cache
-        update_picked_df_cache(picked_df.copy())
-
-        print(f"[api/picked] 更新股票成功: {stock_code}", flush=True)
-        return {"status": "success", "message": "股票更新成功"}
-
-    except Exception as e:
-        print(f"[api/picked] 更新股票失败: {e}", flush=True)
-        return {"status": "error", "message": str(e)}
-
-
-def delete_picked_stock(stock_code):
-    """从精选列表中删除股票"""
-    global picked_df
-    try:
-        if picked_df is None or picked_df.empty:
-            return {"status": "error", "message": "精选列表为空"}
-
-        # 检查股票是否存在
-        if stock_code not in picked_df['股票代码'].values:
-            return {"status": "error", "message": "股票不存在于精选列表中"}
-
-        # 删除股票
-        picked_df = picked_df[picked_df['股票代码'] != stock_code]
-
-        # 同步保存到文件
-        picked_path = get_resource_path("static/picked.csv")
-        if picked_path:
-            picked_df.to_csv(picked_path, index=False, encoding='utf-8')
-
-        # 更新worker进程中的picked_df缓存
-        from get_changes_worker_queue import update_picked_df_cache
-        update_picked_df_cache(picked_df.copy())
-
-        print(f"[api/picked] 删除股票成功: {stock_code}", flush=True)
-        return {"status": "success", "message": "股票删除成功"}
-
-    except Exception as e:
-        print(f"[api/picked] 删除股票失败: {e}", flush=True)
-        return {"status": "error", "message": str(e)}
-
-
-def get_current_picked_df():
-    """获取当前内存中的picked_df，供worker进程使用"""
-    global picked_df
-    return picked_df
 
 
 def search_concepts(query):
@@ -371,12 +209,12 @@ def search_concepts(query):
             return {"status": "error", "message": "概念数据文件不存在"}
 
         print(f"[api/concepts/search] 直接从文件读取concepts数据进行搜索: {concepts_path}", flush=True)
-        
+
         # 读取完整的原始数据
         dtype_dict = {'股票代码': str, '板块代码': str}
         original_concept_df = pd.read_csv(concepts_path, dtype=dtype_dict)
         original_concept_df = original_concept_df.fillna('')
-        
+
         print(f"[api/concepts/search] 读取到{len(original_concept_df)}条原始概念数据", flush=True)
 
         # 首先尝试精确匹配股票代码
@@ -384,12 +222,12 @@ def search_concepts(query):
         exact_match_df = original_concept_df[
             original_concept_df['股票代码'].astype(str) == query
         ]
-        
+
         if not exact_match_df.empty:
             # 如果找到精确匹配的股票代码，返回该股票的所有板块记录（不去重）
             results = exact_match_df[['股票代码', '股票名称', '板块代码', '板块名称']]
             print(f"[api/concepts/search] 精确匹配股票代码'{query}'，找到{len(results)}条板块记录", flush=True)
-            
+
             # 显示所有记录
             for _, row in results.iterrows():
                 print(f"  - {row['股票代码']} | {row['股票名称']} | {row['板块代码']} | {row['板块名称']}", flush=True)
@@ -400,7 +238,7 @@ def search_concepts(query):
                 original_concept_df['股票名称'].astype(str).str.contains(query, na=False) |
                 original_concept_df['股票代码'].astype(str).str.contains(query, na=False)
             ]
-            
+
             # 模糊搜索时也不去重，让前端自己处理
             results = filtered_df[['股票代码', '股票名称', '板块代码', '板块名称']].head(50)
             print(f"[api/concepts/search] 模糊搜索'{query}'，找到{len(results)}条结果", flush=True)

@@ -74,7 +74,7 @@ def get_latest_trade_date():
 
         return date_obj.strftime("%Y%m%d")
     except Exception as e:
-        print(f"[get_changes_worker_queue] 获取最新交易日失败: {e}，使用当前日期")
+        print(f"[worker_queue] 获取最新交易日失败: {e}，使用当前日期")
         return datetime.now().strftime("%Y%m%d")
 
 def get_data_dir():
