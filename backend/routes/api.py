@@ -37,6 +37,10 @@ def api_get_picked_stocks():
 @router.post("/api/picked")
 def api_add_picked_stock(stock_data: StockData):
     """添加股票到精选列表"""
+    import logging
+    logging.debug(f"[api/picked] POST请求接收到的原始数据: {stock_data}")
+    logging.debug(f"[api/picked] 数据类型: {type(stock_data)}")
+    logging.debug(f"[api/picked] 数据字段: 股票代码={stock_data.股票代码}, 股票名称={stock_data.股票名称}, 板块代码={stock_data.板块代码}, 板块名称={stock_data.板块名称}")
     return add_picked_stock(stock_data)
 
 

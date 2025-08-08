@@ -3,36 +3,13 @@ import pandas as pd
 import os
 import logging
 from utils import setup_static_directory, uplimit10jqka
+from utils import type_mapping
 
 
 # 获取数据
 def prepareChanges(current_date:str):
     import time
-    # 类型映射字典
-    type_mapping = {
-        '8201': '火箭发射',
-        '8202': '快速反弹',
-        '8193': '大笔买入',
-        '4': '封涨停板',
-        '32': '打开跌停板',
-        '64': '有大买盘',
-        '8207': '竞价上涨',
-        '8209': '高开5日线',
-        # '8211': '向上缺口',
-        # '8213': '60日新高',
-        # '8215': '60日大幅上涨',
-        # '8204': '加速下跌',
-        # '8203': '高台跳水',
-        # '8194': '大笔卖出',
-        # '8': '封跌停板',
-        # '16': '打开涨停板',
-        # '128': '有大卖盘',
-        # '8208': '竞价下跌',
-        # '8210': '低开5日线',
-        # '8212': '向下缺口',
-        # '8214': '60日新低',
-        # '8216': '60日大幅下跌'
-    }
+
     all_df = []
     for code, type_value in type_mapping.items():
         logging.debug(f'[prepare] 正在请求类型: {type_value} (symbol={type_value})')

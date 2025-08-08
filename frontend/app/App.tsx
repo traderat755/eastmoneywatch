@@ -134,6 +134,11 @@ const StockMarketMonitor = () => {
 
               // 判断是否为最后一个时间点的股票
               const isLastTimeStock = (time === lastTime && period === lastPeriod);
+              // 验证数据完整性
+              if (!item["名称"] || !item["股票代码"]) {
+                console.warn('[WebSocket] 跳过无效股票数据:', item);
+                continue;
+              }
               concepts[item["板块名称"]][period][time].push({
                 name: item["名称"],
                 code: item["股票代码"],
@@ -248,17 +253,21 @@ const StockMarketMonitor = () => {
     // 拉取板块映射
     const fetchSectors = async () => {
       try {
+        console.log('[fetchSectors] 开始拉取板块映射...');
         const res = await fetch('http://localhost:61125/api/concepts/sectors');
         const data = await res.json();
+        console.log('[fetchSectors] API响应:', data);
         if (data.status === 'success') {
+          console.log('[fetchSectors] 成功获取板块数据:', data.data);
+          console.log('[fetchSectors] 板块数据长度:', data.data?.length || 0);
           setSectors(data.data || []);
         } else {
+          console.error('[fetchSectors] 拉取板块映射失败:', data.message);
           setSectors([]);
-          console.log('[App] 拉取板块映射失败:', data.message);
         }
       } catch (e) {
+        console.error('[fetchSectors] 拉取板块映射异常:', e);
         setSectors([]);
-        console.log('[App] 拉取板块映射异常:', e);
       }
     };
     fetchSectors();
@@ -273,11 +282,22 @@ const StockMarketMonitor = () => {
     }
     try {
       console.log(`点击了板块: ${sectorName}`);
+      console.log('[handleSectorClick] sectors数组:', sectors);
+      console.log('[handleSectorClick] sectors数组长度:', sectors.length);
+      
       const sector = sectors.find(s => s.板块名称 === sectorName);
       if (!sector) {
         toast.error('未找到板块代码');
         return;
       }
+      console.log('[handleSectorClick] 找到的sector对象:', sector);
+      console.log('[handleSectorClick] sector字段验证:', {
+        板块代码: sector.板块代码,
+        板块名称: sector.板块名称,
+        板块代码类型: typeof sector.板块代码,
+        板块名称类型: typeof sector.板块名称
+      });
+      
       // 聚合该板块所有股票
       const periodData = data[sectorName];
       if (!periodData) {
@@ -303,10 +323,36 @@ const StockMarketMonitor = () => {
       }, allStocks[0]);
       console.log('[handleSectorClick] 板块所有股票:', allStocks);
       console.log('[handleSectorClick] 最高涨幅股票:', maxStock);
+      console.log('[handleSectorClick] maxStock字段验证:', {
+        code: maxStock.code,
+        name: maxStock.name,
+        code类型: typeof maxStock.code,
+        name类型: typeof maxStock.name
+      });
+      console.log('[handleSectorClick] sector对象:', sector);
+      console.log('[handleSectorClick] 准备发送的数据:', {
+        股票代码: maxStock.code,
+        股票名称: maxStock.name,
+        板块代码: sector.板块代码,
+        板块名称: sector.板块名称,
+      });
+      
+      // 验证数据完整性
+      if (!maxStock.code || !sector.板块代码 || !sector.板块名称) {
+        console.error('[handleSectorClick] 数据验证失败:', {
+          股票代码: maxStock.code,
+          股票名称: maxStock.name,
+          板块代码: sector.板块代码,
+          板块名称: sector.板块名称
+        });
+        toast.error('数据不完整，无法添加股票');
+        return;
+      }
+      
       // POST到/api/picked
       await addStock({
         股票代码: maxStock.code,
-        股票名称: maxStock.name,
+        股票名称: maxStock.name || '',  // 确保有值，即使为空字符串
         板块代码: sector.板块代码,
         板块名称: sector.板块名称,
       });

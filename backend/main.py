@@ -2,8 +2,10 @@ import os
 import sys
 import asyncio
 import threading
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from uvicorn import Config, Server
 from collections import deque
 from datetime import datetime
@@ -38,6 +40,31 @@ app = FastAPI(
     title="API server",
     version="0.1.0",
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """处理请求验证错误，记录详细信息"""
+    logging.error(f"[validation_error] 请求验证失败: {request.url}")
+    logging.error(f"[validation_error] 请求方法: {request.method}")
+    logging.error(f"[validation_error] 请求头: {dict(request.headers)}")
+    logging.error(f"[validation_error] 错误详情: {exc.errors()}")
+    
+    # 尝试读取请求体
+    try:
+        body = await request.body()
+        logging.error(f"[validation_error] 请求体: {body.decode('utf-8')}")
+    except Exception as e:
+        logging.error(f"[validation_error] 无法读取请求体: {e}")
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "请求数据验证失败",
+            "errors": exc.errors(),
+            "body": body.decode('utf-8') if 'body' in locals() else "无法读取"
+        }
+    )
 
 
 @app.on_event("startup")

@@ -107,15 +107,30 @@ def add_picked_stock(stock_data):
     try:
         # 转换为字典
         stock_dict = stock_data.dict()
+        logging.debug(f"[api/picked] 添加股票入参: {stock_dict}")
+        
+        # 确保股票名称字段存在，如果为空则使用股票代码
+        if not stock_dict.get('股票名称'):
+            stock_dict['股票名称'] = stock_dict.get('股票代码', '')
+            logging.debug(f"[api/picked] 股票名称为空，使用股票代码: {stock_dict['股票名称']}")
+        
         # 检查是否已存在
         if not picked_df.empty and stock_dict['股票代码'] in picked_df['股票代码'].values:
-            logging.debug(f"[api/picked] 添加股票失败: 股票已存在于精选列表中")
-            logging.debug(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}")
-            logging.debug(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}")
-            return {"status": "error", "message": "股票已存在于精选列表中"}
-        # 添加新股票到内存DataFrame
-        new_stock = pd.DataFrame([stock_dict])
-        picked_df = pd.concat([new_stock,picked_df], ignore_index=True)
+            logging.debug(f"[api/picked] 股票已存在，进行覆盖更新: {stock_dict['股票代码']}")
+            # 找到现有股票的索引
+            stock_index = picked_df[picked_df['股票代码'] == stock_dict['股票代码']].index[0]
+            # 更新现有股票信息
+            for key, value in stock_dict.items():
+                if key in picked_df.columns:
+                    picked_df.loc[stock_index, key] = value
+            logging.debug(f"[api/picked] 覆盖更新股票成功: {stock_dict['股票名称']}")
+        else:
+            logging.debug(f"[api/picked] 股票不存在，添加新股票: {stock_dict['股票代码']}")
+            # 添加新股票到内存DataFrame
+            new_stock = pd.DataFrame([stock_dict])
+            picked_df = pd.concat([new_stock, picked_df], ignore_index=True)
+            logging.debug(f"[api/picked] 添加新股票成功: {stock_dict['股票名称']}")
+        
         # 同步保存到文件
         picked_path = get_resource_path("static/picked.csv")
         if not picked_path:
@@ -127,12 +142,13 @@ def add_picked_stock(stock_data):
             os.makedirs(static_dir, exist_ok=True)
             picked_path = os.path.join(static_dir, "picked.csv")
         picked_df.to_csv(picked_path, index=False, encoding='utf-8')
+        
         # 同步到共享内存
         _sync_to_shared_memory()
-        logging.debug(f"[api/picked] 添加股票成功: {stock_dict['股票名称']}")
+        
         logging.debug(f"[api/picked] 操作后 picked_df 长度: {len(picked_df) if picked_df is not None else 'None'}")
         logging.debug(f"[api/picked] 操作后 shared_picked_data keys: {list(shared_picked_data.keys()) if shared_picked_data else 'None'}")
-        return {"status": "success", "message": "股票添加成功"}
+        return {"status": "success", "message": "股票添加/更新成功"}
     except Exception as e:
         logging.debug(f"[api/picked] 添加股票失败: {e}")
         _sync_to_shared_memory()

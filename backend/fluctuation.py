@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 from typing import Optional
 import logging
+from utils import type_mapping
 
 
 def filter_stock_data(df: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -64,7 +65,7 @@ def getChanges():
     """获取股票异动数据，不包含概念板块数据的拼接"""
 
     response = requests.get(
-        'https://push2ex.eastmoney.com/getAllStockChanges?type=8201,8202,8193,4,32,64,8207,8209,8211,8213,8215,8204,8203,8194,8,16,128,8208,8210,8212,8214,8216&cb=jQuery35108409427522251944_1753773534498&ut=7eea3edcaed734bea9cbfc24409ed989&pageindex=0&pagesize=1000&dpt=wzchanges&_=1753773534514',
+        f'https://push2ex.eastmoney.com/getAllStockChanges?type={type_mapping.keys()}&cb=jQuery35108409427522251944_1753773534498&ut=7eea3edcaed734bea9cbfc24409ed989&pageindex=0&pagesize=1000&dpt=wzchanges&_=1753773534514',
         headers={**HEADERS, 'Referer': 'https://quote.eastmoney.com/changes/'},
     )
 
@@ -114,32 +115,6 @@ def getChanges():
         # 直接放原始类型和涨跌幅，便于调试
         output_df['原始类型'] = df['类型']
         output_df['原始涨跌幅'] = df['涨跌幅']
-
-        # 类型映射字典
-        type_mapping = {
-            '8201': '火箭发射',
-            '8202': '快速反弹',
-            '8193': '大笔买入',
-            '4': '封涨停板',
-            '32': '打开跌停板',
-            '64': '有大买盘',
-            '8207': '竞价上涨',
-            '8209': '高开5日线',
-            '8211': '向上缺口',
-            '8213': '60日新高',
-            '8215': '60日大幅上涨',
-            '8204': '加速下跌',
-            '8203': '高台跳水',
-            '8194': '大笔卖出',
-            '8': '封跌停板',
-            '16': '打开涨停板',
-            '128': '有大卖盘',
-            '8208': '竞价下跌',
-            '8210': '低开5日线',
-            '8212': '向下缺口',
-            '8214': '60日新低',
-            '8216': '60日大幅下跌'
-        }
 
         # 增加映射后的类型和相关信息，便于对比
         logging.debug(f"[getChanges] 原始类型值: {df['类型'].unique().tolist()}")

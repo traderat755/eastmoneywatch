@@ -3,7 +3,7 @@ import { toast } from 'react-hot-toast';
 
 export interface PickedStock {
   股票代码: string;
-  股票名称: string;
+  股票名称?: string;  // 设为可选
   板块代码: string;
   板块名称: string;
 }
@@ -50,6 +50,20 @@ export const PickedProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const addStock = async (stock: PickedStock) => {
     try {
+      console.log('[PickedContext] 准备发送的股票数据:', stock);
+      console.log('[PickedContext] 数据类型检查:', {
+        股票代码: typeof stock.股票代码,
+        股票名称: typeof stock.股票名称,
+        板块代码: typeof stock.板块代码,
+        板块名称: typeof stock.板块名称
+      });
+      console.log('[PickedContext] 数据值检查:', {
+        股票代码: stock.股票代码,
+        股票名称: stock.股票名称,
+        板块代码: stock.板块代码,
+        板块名称: stock.板块名称
+      });
+      
       const response = await fetch('http://localhost:61125/api/picked', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,6 +77,7 @@ export const PickedProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         toast.error(result.message || '添加失败');
       }
     } catch (error) {
+      console.error('[PickedContext] 添加股票失败:', error);
       toast.error('网络错误，请稍后重试');
     }
   };
