@@ -20,14 +20,16 @@ def apply_sorting(df,concept_df, uplimit_cache=None, for_frontend=True):
             logging.debug("[apply_sorting] concept_df缓存为空，这不应该发生")
             return df
 
-        # 1. 为股票异动数据添加概念板块信息
-        df = add_concept_data_to_changes(df, concept_df)
-
-        # 2. 构建板块排序顺序：picked_df -> rising concepts -> 其他concept_df
-        board_order = build_board_order(concept_df, picked_df)
-
-        # 3. 应用板块排序
-        df = sort_by_board_order(df, board_order)
+        #  为股票异动数据添加概念板块信息（使用过滤后的concept_df）
+        # 先用picked_df拼接，再用concept_df拼接
+        with_picked_df = add_concept_data_to_changes(df, picked_df)
+        with_concept_df = add_concept_data_to_changes(df, concept_df)
+        df = sort_by_board_order(with_concept_df, concept_df)
+        # 拼接起来，with_picked_df在前，with_concept_df在后
+        df = pd.concat([with_picked_df, with_concept_df], ignore_index=True)
+        logging.debug(f"[apply_sorting] 拼接后数据量: {len(df)} (picked优先)")
+        # 按时间+股票代码去重，保留第一次出现的（即picked优先）
+        df = df.drop_duplicates(subset=['股票代码','时间'], keep='first').reset_index(drop=True)
 
         # 4. 添加上下午字段和uplimit信息
         if '时间' in df.columns:
@@ -145,31 +147,6 @@ def add_concept_data_to_changes(df, concept_df):
         import traceback
         logging.debug(f"[add_concept_data_to_changes] 详细错误信息: {traceback.format_exc()}")
         return df
-
-
-def build_board_order(concept_df, picked_df):
-    """构建板块排序顺序：picked_df最前，rising concepts次之，其他concept_df最后"""
-    board_order = []
-
-    try:
-        # 1. picked_df的板块在最前面
-        if picked_df is not None and not picked_df.empty:
-            picked_sector_codes = picked_df['板块代码'].unique().tolist()
-            board_order.extend(picked_sector_codes)
-            logging.debug(f"[build_board_order] 添加picked板块: {picked_sector_codes}")
-
-        # 2. 其他concept_df的板块在最后
-        all_concept_codes = concept_df['板块代码'].unique().tolist()
-        remaining_codes = [code for code in all_concept_codes if code not in board_order]
-        board_order.extend(remaining_codes)
-        logging.debug(f"[build_board_order] 添加剩余板块: {len(remaining_codes)}个")
-
-    except Exception as e:
-        logging.debug(f"[build_board_order] 构建板块顺序时出错: {e}")
-        # 出错时使用concept_df的原始顺序
-        board_order = concept_df['板块代码'].unique().tolist()
-
-    return board_order
 
 
 def sort_by_board_order(df, board_order):

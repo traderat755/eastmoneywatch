@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, Save, X } from 'lucide-react';
+import { Search, Edit, Trash2, Save, X } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePicked, PickedStock } from '../lib/PickedContext';
 
@@ -152,7 +152,9 @@ export function PickedPage() {
     setEditData({ ...stock });
     // 通过搜索API加载该股票的所有相关板块
     console.log(`即将搜索股票 ${stock.股票名称}(${stock.股票代码}) 的所有相关板块`);
-    await loadStockSectors(stock.股票代码, stock.股票名称);
+    if (stock.股票代码) {
+      await loadStockSectors(stock.股票代码, stock.股票名称 || '');
+    }
   };
 
   // 取消编辑

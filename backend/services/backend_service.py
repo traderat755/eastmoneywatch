@@ -6,6 +6,7 @@ from multiprocessing import Process
 from utils import get_resource_path
 from services.pick_service import load_picked_data, get_shared_picked_data
 import logging
+import akshare as ak
 
 def clean_nan_values(records):
     """清理字典列表中的NaN值，确保JSON兼容"""
@@ -147,6 +148,7 @@ def initialize_backend_services(buffer_queue):
                     logging.debug(f"[sidecar] 读取当前changes文件传递给worker: {changes_path}")
                     current_changes_df = pd.read_csv(changes_path)
                     current_changes_df = current_changes_df.fillna('').infer_objects(copy=False)
+                    
                     # 字段校验
                     standard_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '板块名称', '四舍五入取整', '上下午', '时间排序', '标识']
                     df_columns = list(current_changes_df.columns)
@@ -156,6 +158,54 @@ def initialize_backend_services(buffer_queue):
                         current_changes_df = pd.DataFrame(columns=standard_columns)
                     else:
                         logging.debug(f"[sidecar] 读取到changes数据，记录数: {len(current_changes_df)}")
+                        
+                        # 覆盖picked相关股票的板块名称和板块编号
+                        try:
+                            from services.pick_service import get_shared_picked_df
+                            picked_df = get_shared_picked_df()
+                            
+                            if picked_df is not None and not picked_df.empty:
+                                logging.debug(f"[sidecar] 开始覆盖picked股票的板块信息，picked_df长度: {len(picked_df)}")
+                                
+                                # 确保股票代码列的数据类型一致
+                                current_changes_df['股票代码'] = current_changes_df['股票代码'].astype(str)
+                                picked_df['股票代码'] = picked_df['股票代码'].astype(str)
+                                
+                                # 创建picked股票代码到板块信息的映射
+                                picked_stock_to_sector_map = dict(zip(picked_df['股票代码'], picked_df['板块名称']))
+                                picked_stock_to_sector_code_map = dict(zip(picked_df['股票代码'], picked_df['板块代码']))
+                                
+                                # 找到在changes中的picked股票
+                                picked_stocks_in_changes = current_changes_df[current_changes_df['股票代码'].isin(picked_df['股票代码'])]
+                                logging.debug(f"[sidecar] 在changes中找到{len(picked_stocks_in_changes)}只picked股票")
+                                
+                                if not picked_stocks_in_changes.empty:
+                                    # 覆盖板块名称
+                                    current_changes_df.loc[current_changes_df['股票代码'].isin(picked_df['股票代码']), '板块名称'] = \
+                                        current_changes_df.loc[current_changes_df['股票代码'].isin(picked_df['股票代码']), '股票代码'].map(picked_stock_to_sector_map)
+                                    
+                                    # 添加板块代码列（如果不存在）
+                                    if '板块代码' not in current_changes_df.columns:
+                                        current_changes_df['板块代码'] = ''
+                                    
+                                    # 覆盖板块代码
+                                    current_changes_df.loc[current_changes_df['股票代码'].isin(picked_df['股票代码']), '板块代码'] = \
+                                        current_changes_df.loc[current_changes_df['股票代码'].isin(picked_df['股票代码']), '股票代码'].map(picked_stock_to_sector_code_map)
+                                    
+                                    logging.debug(f"[sidecar] 已覆盖{len(picked_stocks_in_changes)}只picked股票的板块信息")
+                                    
+                                    # 记录覆盖的股票信息
+                                    covered_stocks = current_changes_df[current_changes_df['股票代码'].isin(picked_df['股票代码'])][['股票代码', '名称', '板块名称', '板块代码']]
+                                    logging.debug(f"[sidecar] 覆盖的股票信息: {covered_stocks.to_dict('records')}")
+                                else:
+                                    logging.debug(f"[sidecar] 在changes中未找到picked股票")
+                            else:
+                                logging.debug(f"[sidecar] picked_df为空，跳过板块信息覆盖")
+                                
+                        except Exception as e:
+                            logging.debug(f"[sidecar] 覆盖picked股票板块信息时出错: {e}")
+                            import traceback
+                            logging.debug(f"[sidecar] 详细错误信息: {traceback.format_exc()}")
                 else:
                     logging.debug(f"[sidecar] changes文件不存在，传递空DataFrame: {changes_path}")
             except Exception as e:
@@ -263,6 +313,7 @@ def search_concepts(query):
             original_concept_df['股票代码'].astype(str) == query
         ]
 
+
         if not exact_match_df.empty:
             # 如果找到精确匹配的股票代码，返回该股票的所有板块记录（不去重）
             results = exact_match_df[['股票代码', '板块代码', '板块名称']]
@@ -284,6 +335,26 @@ def search_concepts(query):
 
         # 清理NaN值
         results = results.fillna('')
+        try:
+            if len(query)==6:
+                symbol = 'SZ'+query
+                if query.startswith('6'):
+                    symbol='SH'+query
+                if query.startswith('8'):
+                    symbol='BJ'+query
+                stock_individual_basic_info_xq_df = ak.stock_individual_basic_info_xq(symbol=symbol)
+                logging.debug(f"[search_concepts] 获取股票基本信息，DataFrame长度: {len(stock_individual_basic_info_xq_df)}")
+
+                # 获取item列为'org_short_name_cn'的行
+                target_row = stock_individual_basic_info_xq_df[stock_individual_basic_info_xq_df['item'] == 'org_short_name_cn']
+                if not target_row.empty:
+                    stock_name = target_row['value'].values[0]
+                    logging.debug(f"[search_concepts] 获取到股票名称: {stock_name}")
+                    results['股票名称'] = stock_name
+                else:
+                    logging.debug(f"[search_concepts] 未找到org_short_name_cn对应的股票名称")
+        except Exception as e:
+            logging.debug(f"[search_concepts] 获取股票名称失败: {e}")
 
         # 转换为字典并清理NaN值
         records = results.to_dict('records')

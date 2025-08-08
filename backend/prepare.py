@@ -118,6 +118,54 @@ def prepareChanges(current_date:str):
         logging.debug(f'[prepare] 有{missing_high_days_count}只股票未找到对应high_days，填充空值')
         output_df['标识'] = output_df['标识'].fillna('').infer_objects(copy=False)
 
+    # 覆盖picked相关股票的板块名称和板块编号
+    try:
+        from services.pick_service import get_shared_picked_df
+        picked_df = get_shared_picked_df()
+        
+        if picked_df is not None and not picked_df.empty:
+            logging.debug(f'[prepare] 开始覆盖picked股票的板块信息，picked_df长度: {len(picked_df)}')
+            
+            # 确保股票代码列的数据类型一致
+            output_df['股票代码'] = output_df['股票代码'].astype(str)
+            picked_df['股票代码'] = picked_df['股票代码'].astype(str)
+            
+            # 创建picked股票代码到板块信息的映射
+            picked_stock_to_sector_map = dict(zip(picked_df['股票代码'], picked_df['板块名称']))
+            picked_stock_to_sector_code_map = dict(zip(picked_df['股票代码'], picked_df['板块代码']))
+            
+            # 找到在output_df中的picked股票
+            picked_stocks_in_output = output_df[output_df['股票代码'].isin(picked_df['股票代码'])]
+            logging.debug(f'[prepare] 在output_df中找到{len(picked_stocks_in_output)}只picked股票')
+            
+            if not picked_stocks_in_output.empty:
+                # 覆盖板块名称
+                output_df.loc[output_df['股票代码'].isin(picked_df['股票代码']), '板块名称'] = \
+                    output_df.loc[output_df['股票代码'].isin(picked_df['股票代码']), '股票代码'].map(picked_stock_to_sector_map)
+                
+                # 添加板块代码列（如果不存在）
+                if '板块代码' not in output_df.columns:
+                    output_df['板块代码'] = ''
+                
+                # 覆盖板块代码
+                output_df.loc[output_df['股票代码'].isin(picked_df['股票代码']), '板块代码'] = \
+                    output_df.loc[output_df['股票代码'].isin(picked_df['股票代码']), '股票代码'].map(picked_stock_to_sector_code_map)
+                
+                logging.debug(f'[prepare] 已覆盖{len(picked_stocks_in_output)}只picked股票的板块信息')
+                
+                # 记录覆盖的股票信息
+                covered_stocks = output_df[output_df['股票代码'].isin(picked_df['股票代码'])][['股票代码', '名称', '板块名称', '板块代码']]
+                logging.debug(f'[prepare] 覆盖的股票信息: {covered_stocks.to_dict("records")}')
+            else:
+                logging.debug(f'[prepare] 在output_df中未找到picked股票')
+        else:
+            logging.debug(f'[prepare] picked_df为空，跳过板块信息覆盖')
+            
+    except Exception as e:
+        logging.debug(f'[prepare] 覆盖picked股票板块信息时出错: {e}')
+        import traceback
+        logging.debug(f'[prepare] 详细错误信息: {traceback.format_exc()}')
+
     save_path = os.path.join(static_dir, f"changes_{current_date}.csv")
     output_df.to_csv(save_path, index=False, encoding='utf-8-sig')
     logging.debug(f'[prepare] 已保存到: {save_path}, 共{len(output_df)}条记录')
