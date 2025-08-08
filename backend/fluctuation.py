@@ -1,11 +1,9 @@
-import re, os
+import re
 import json
 import pandas as pd
 import requests
-import time as t
 from typing import Optional
-import akshare as ak
-from utils import get_resource_path
+import logging
 
 
 def filter_stock_data(df: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -51,7 +49,7 @@ HEADERS = {
 
 def parse_jsonp(jsonp_str):
     if not jsonp_str or not isinstance(jsonp_str, str):
-        print("错误：输入不是有效的字符串")
+        logging.debug("错误：输入不是有效的字符串")
         return None
     match = re.match(r'^[a-zA-Z0-9_]+\s*\(\s*(.*)\s*\)\s*;?\s*$', jsonp_str.strip(), re.DOTALL)
     if match:
@@ -144,17 +142,17 @@ def getChanges():
         }
 
         # 增加映射后的类型和相关信息，便于对比
-        print(f"[getChanges] 原始类型值: {df['类型'].unique().tolist()}")
+        logging.debug(f"[getChanges] 原始类型值: {df['类型'].unique().tolist()}")
         mapped_types = df['类型'].astype(str).map(type_mapping)
-        print(f"[getChanges] 映射后类型值: {mapped_types.unique().tolist()}")
+        logging.debug(f"[getChanges] 映射后类型值: {mapped_types.unique().tolist()}")
 
         # 检查未映射的类型
         unmapped_types = df[~df['类型'].astype(str).isin(type_mapping.keys())]['类型'].unique()
         if len(unmapped_types) > 0:
-            print(f"[getChanges] 发现未映射的类型: {unmapped_types.tolist()}")
+            logging.debug(f"[getChanges] 发现未映射的类型: {unmapped_types.tolist()}")
 
-        output_df['类型'] = mapped_types.fillna('未知类型')
-        print(f"[getChanges] 最终类型值: {output_df['类型'].unique().tolist()}")
+        output_df['类型'] = mapped_types.fillna('未知类型').infer_objects(copy=False)
+        logging.debug(f"[getChanges] 最终类型值: {output_df['类型'].unique().tolist()}")
 
         # 先加一列'四舍五入取整'，在加百分号前处理
         output_df['四舍五入取整'] = df['涨跌幅'].apply(lambda x: int(round(x * 100)) if pd.notnull(x) else None)
@@ -166,9 +164,9 @@ def getChanges():
         html_df = output_df[['股票代码', '时间', '名称', '相关信息', '类型', '四舍五入取整']].copy()
 
         # 确保股票代码不为空
-        print(f"[getChanges] 处理后包含股票代码的记录数: {html_df['股票代码'].notna().sum()}/{len(html_df)}")
+        logging.debug(f"[getChanges] 处理后包含股票代码的记录数: {html_df['股票代码'].notna().sum()}/{len(html_df)}")
         if html_df['股票代码'].isna().any():
-            print(f"[getChanges] 警告：发现股票代码为空的记录，将移除这些记录")
+            logging.debug(f"[getChanges] 警告：发现股票代码为空的记录，将移除这些记录")
             html_df = html_df.dropna(subset=['股票代码'])
 
         # 添加上下午字段

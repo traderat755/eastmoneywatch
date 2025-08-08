@@ -6,9 +6,9 @@ import { SettingsPage } from './components/SettingsPage';
 import { PickedPage } from './components/PickedPage';
 import StockItem from './components/StockItem';
 import { UpdateConceptsButton } from './components/UpdateConceptsButton';
-import { Button } from './components/ui/button';
 import  { Toaster, toast } from 'react-hot-toast';
 import SectorButton from './components/SectorButton';
+import { usePicked } from './lib/PickedContext';
 
 interface StockInfo {
   name: string;
@@ -51,8 +51,7 @@ const StockMarketMonitor = () => {
   const [updateTime, setUpdateTime] = useState<string>('');
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'picked'>('home');
-  const [pickedSectors, setPickedSectors] = useState<string[]>([]);
-  const [pickedLoading, setPickedLoading] = useState(false);
+  const { pickedSectorNames, loading: pickedLoading, addStock, deleteStockBySectorName } = usePicked();
   const [sectors, setSectors] = useState<{板块名称: string; 板块代码: string}[]>([]);
 
   // 移除 isLoadingConcepts 状态和 handleGetConcepts 函数，这些逻辑已经移到 UpdateConceptsButton 组件中
@@ -243,31 +242,7 @@ const StockMarketMonitor = () => {
     };
   }, []);
 
-  useEffect(() => {
-    // 加载已精选板块
-    const fetchPicked = async () => {
-      setPickedLoading(true);
-      try {
-        const res = await fetch('http://localhost:61125/api/picked');
-        const data = await res.json();
-        if (data.status === 'success') {
-          // 只取板块名称去重
-          const names = Array.from(new Set((data.data || []).map((item: any) => item["板块名称"]))).filter(Boolean) as string[];
-          setPickedSectors(names);
-          console.log('[App] 已精选板块:', names);
-        } else {
-          setPickedSectors([]);
-          console.log('[App] 加载精选失败:', data.message);
-        }
-      } catch (e) {
-        setPickedSectors([]);
-        console.log('[App] 加载精选异常:', e);
-      } finally {
-        setPickedLoading(false);
-      }
-    };
-    fetchPicked();
-  }, []);
+
 
   useEffect(() => {
     // 拉取板块映射
@@ -277,7 +252,6 @@ const StockMarketMonitor = () => {
         const data = await res.json();
         if (data.status === 'success') {
           setSectors(data.data || []);
-          console.log('[App] 板块映射:', data.data);
         } else {
           setSectors([]);
           console.log('[App] 拉取板块映射失败:', data.message);
@@ -291,32 +265,10 @@ const StockMarketMonitor = () => {
   }, []);
 
   const handleSectorClick = async (sectorName: string) => {
-    const isPicked = pickedSectors.includes(sectorName);
+    const isPicked = pickedSectorNames.includes(sectorName);
     if (isPicked) {
       // 已精选，点击即删除
-      try {
-        console.log(`[handleSectorClick] 删除板块: ${sectorName}`);
-        const response = await fetch(`http://localhost:61125/api/picked/${encodeURIComponent(sectorName)}`, {
-          method: 'DELETE',
-        });
-        const result = await response.json();
-        if (result.status === 'success') {
-          toast.success(result.message);
-          // 刷新精选
-          const res = await fetch('http://localhost:61125/api/picked');
-          const data = await res.json();
-          if (data.status === 'success') {
-            const names = Array.from(new Set((data.data || []).map((item: any) => item["板块名称"]))).filter(Boolean) as string[];
-            setPickedSectors(names);
-            console.log('[App] 已精选板块:', names);
-          }
-        } else {
-          toast.error(result.message || '删除失败');
-        }
-      } catch (error) {
-        console.error('删除板块失败:', error);
-        toast.error('网络错误，请稍后重试');
-      }
+      await deleteStockBySectorName(sectorName);
       return;
     }
     try {
@@ -352,32 +304,12 @@ const StockMarketMonitor = () => {
       console.log('[handleSectorClick] 板块所有股票:', allStocks);
       console.log('[handleSectorClick] 最高涨幅股票:', maxStock);
       // POST到/api/picked
-      const response = await fetch('http://localhost:61125/api/picked', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          股票代码: maxStock.code,
-          股票名称: maxStock.name,
-          板块代码: sector.板块代码,
-          板块名称: sector.板块名称,
-        }),
+      await addStock({
+        股票代码: maxStock.code,
+        股票名称: maxStock.name,
+        板块代码: sector.板块代码,
+        板块名称: sector.板块名称,
       });
-      const result = await response.json();
-      if (result.status === 'success') {
-        toast.success(result.message);
-        // 刷新精选
-        const res = await fetch('http://localhost:61125/api/picked');
-        const data = await res.json();
-        if (data.status === 'success') {
-          const names = Array.from(new Set((data.data || []).map((item: any) => item["板块名称"]))).filter(Boolean) as string[];
-          setPickedSectors(names);
-          console.log('[App] 已精选板块:', names);
-        }
-      } else {
-        toast.error(result.message || '添加失败');
-      }
     } catch (error) {
       console.error('添加板块失败:', error);
       toast.error('网络错误，请稍后重试');
@@ -489,7 +421,7 @@ const StockMarketMonitor = () => {
                           <TableCell className="font-semibold align-top text-gray-800 dark:text-gray-200 border-r dark:border-gray-600 p-3">
                             <SectorButton
                               sectorName={conceptName}
-                              isPicked={pickedSectors.includes(conceptName)}
+                              isPicked={pickedSectorNames.includes(conceptName)}
                               loading={pickedLoading}
                               onClick={handleSectorClick}
                             />

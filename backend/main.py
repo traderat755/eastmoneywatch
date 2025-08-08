@@ -8,6 +8,16 @@ from uvicorn import Config, Server
 from collections import deque
 from datetime import datetime
 from multiprocessing import Queue
+import logging
+
+# 设置整体logging层级为debug
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 from config import get_cors_origins
 from services.backend_service import initialize_backend_services
@@ -33,11 +43,11 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     """FastAPI 启动时的事件处理"""
-    print("[sidecar] FastAPI 应用启动中...", flush=True)
-    
+    logging.debug("[sidecar] FastAPI 应用启动中...")
+
     # Set buffer queue for websocket module
     set_buffer_queue(buffer_queue)
-    
+
     # 在后台线程中初始化服务，避免阻塞启动
     init_thread = threading.Thread(target=initialize_backend_services, args=(buffer_queue,))
     init_thread.daemon = True
@@ -50,7 +60,7 @@ app.include_router(websocket_router)
 
 # 获取CORS origins配置
 origins = get_cors_origins()
-print(f"[CORS] 配置的origins: {origins}")
+logging.debug(f"[CORS] 配置的origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,7 +93,7 @@ def output_reader(pipe, name):
     """从管道读取输出并打印"""
     for line in pipe:
         message = f"[{name}] {line.strip()}"
-        print(message)
+        logging.debug(message)
         # 使用asyncio创建一个新的事件循环来发送WebSocket消息
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -105,31 +115,31 @@ def kill_process():
 # Programmatically startup the api server
 def start_api_server(**kwargs):
     global server_instance
-    print(f"[sidecar] 准备启动API服务器", flush=True)
+    logging.debug(f"[sidecar] 准备启动API服务器")
     try:
         if server_instance is None:
-            print(f"[sidecar] 正在启动API服务器...", flush=True)
-            config = Config(app, host="0.0.0.0", log_level="info")
+            logging.debug(f"[sidecar] 正在启动API服务器...")
+            config = Config(app, host="0.0.0.0", log_level="debug")
             server_instance = Server(config)
             # Start the ASGI server
             # Use a more robust approach to run the server
             try:
-                print(f"[sidecar] 服务器配置完成，开始运行", flush=True)
+                logging.debug(f"[sidecar] 服务器配置完成，开始运行")
                 server_instance.run()
             except Exception as e:
-                print(f"[sidecar] API服务器运行错误: {e}", flush=True)
+                logging.debug(f"[sidecar] API服务器运行错误: {e}")
         else:
-            print(
+            logging.debug(
                 "[sidecar] 无法启动新服务器。服务器实例已在运行中。",
                 flush=True,
             )
     except Exception as e:
-        print(f"[sidecar] 错误，启动API服务器失败: {e}", flush=True)
+        logging.debug(f"[sidecar] 错误，启动API服务器失败: {e}")
 
 
 # Handle the stdin event loop. This can be used like a CLI.
 def stdin_loop():
-    print("[sidecar] Waiting for commands...", flush=True)
+    logging.debug("[sidecar] Waiting for commands...")
     try:
         while True:
             # Read input from stdin.
@@ -138,14 +148,14 @@ def stdin_loop():
             # Check if the input matches one of the available functions
             match user_input:
                 case "sidecar shutdown":
-                    print("[sidecar] Received 'sidecar shutdown' command.", flush=True)
+                    logging.debug("[sidecar] Received 'sidecar shutdown' command.")
                     kill_process()
                 case _:
-                    print(
-                        f"[sidecar] Invalid command [{user_input}]. Try again.", flush=True
+                    logging.debug(
+                        f"[sidecar] Invalid command [{user_input}]. Try again."
                     )
     except Exception as e:
-        print(f"[sidecar] stdin_loop error: {e}", flush=True)
+        logging.debug(f"[sidecar] stdin_loop error: {e}")
 
 
 # Start the input loop in a separate thread
@@ -155,7 +165,7 @@ def start_input_thread():
         input_thread.daemon = True  # so it exits when the main program exits
         input_thread.start()
     except Exception as e:
-        print(f"[sidecar] Failed to start input handler: {e}", flush=True)
+        logging.debug(f"[sidecar] Failed to start input handler: {e}")
 
 
 if __name__ == "__main__":
@@ -166,5 +176,5 @@ if __name__ == "__main__":
     try:
         start_api_server()
     except Exception as e:
-        print(f"[sidecar] Fatal error in main thread: {e}", flush=True)
+        logging.debug(f"[sidecar] Fatal error in main thread: {e}")
         sys.exit(1)

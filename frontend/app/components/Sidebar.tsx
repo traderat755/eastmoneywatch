@@ -1,5 +1,5 @@
 import { Settings, Home, Star } from 'lucide-react';
-
+import { Button } from './ui/button';
 interface SidebarProps {
   currentPage: 'home' | 'settings' | 'picked';
   onPageChange: (page: 'home' | 'settings' | 'picked') => void;
@@ -10,7 +10,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     <div className="w-18 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
 
       <nav className="flex-1 p-4 space-y-2">
-        <button
+        <Button
           onClick={() => onPageChange('home')}
           className={`w-full flex items-center rounded-lg text-left transition-colors ${
             currentPage === 'home'
@@ -19,9 +19,9 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           }`}
         >
           <Home className="h-4 w-4" />
-        </button>
+        </Button>
 
-        {/* <button
+        <Button
           onClick={() => onPageChange('picked')}
           className={`w-full flex items-center rounded-lg text-left transition-colors ${
             currentPage === 'picked'
@@ -30,9 +30,9 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           }`}
         >
           <Star className="h-4 w-4" />
-        </button> */}
+        </Button>
 
-        <button
+        <Button
           onClick={() => onPageChange('settings')}
           className={`w-full flex items-center rounded-lg text-left transition-colors ${
             currentPage === 'settings'
@@ -41,7 +41,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           }`}
         >
           <Settings className="h-4 w-4" />
-        </button>
+        </Button>
       </nav>
     </div>
   );

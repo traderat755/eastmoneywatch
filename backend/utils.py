@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 import akshare as ak
-
+import logging
 
 def is_trading_time():
     """判断当前是否为交易日且在交易时间内"""
@@ -14,7 +14,7 @@ def is_trading_time():
 
         # 判断是否为工作日（周一到周五）
         if now.weekday() >= 5:  # 5=周六, 6=周日
-            print(f"[is_trading_time] 当前为周末，非交易日")
+            logging.debug(f"[is_trading_time] 当前为周末，非交易日")
             return False
 
         # 获取当前时间的小时和分钟
@@ -35,7 +35,7 @@ def is_trading_time():
         )
 
         if not is_trading_hours:
-            print(f"[is_trading_time] 当前时间 {current_hour:02d}:{current_minute:02d} 不在交易时间内")
+            logging.debug(f"[is_trading_time] 当前时间 {current_hour:02d}:{current_minute:02d} 不在交易时间内")
             return False
 
         # 检查是否为交易日（通过获取最新交易日来判断）
@@ -43,14 +43,14 @@ def is_trading_time():
         current_date = now.strftime("%Y%m%d")
 
         if current_date != latest_trade_date:
-            print(f"[is_trading_time] 当前日期 {current_date} 不是最新交易日 {latest_trade_date}")
+            logging.debug(f"[is_trading_time] 当前日期 {current_date} 不是最新交易日 {latest_trade_date}")
             return False
 
-        print(f"[is_trading_time] 当前为交易日且在交易时间内: {current_hour:02d}:{current_minute:02d}")
+        logging.debug(f"[is_trading_time] 当前为交易日且在交易时间内: {current_hour:02d}:{current_minute:02d}")
         return True
 
     except Exception as e:
-        print(f"[is_trading_time] 判断交易时间失败: {e}")
+        logging.debug(f"[is_trading_time] 判断交易时间失败: {e}")
         return False
 
 
@@ -74,7 +74,7 @@ def get_latest_trade_date():
 
         return date_obj.strftime("%Y%m%d")
     except Exception as e:
-        print(f"[worker_queue] 获取最新交易日失败: {e}，使用当前日期")
+        logging.debug(f"[worker_queue] 获取最新交易日失败: {e}，使用当前日期")
         return datetime.now().strftime("%Y%m%d")
 
 def get_data_dir():
@@ -100,10 +100,10 @@ def get_resource_path(relative_path):
         if os.path.exists(full_path):
             return full_path
         else:
-            print(f"Warning: Resource not found at {full_path}")
+            logging.debug(f"Warning: Resource not found at {full_path}")
             return None
     except Exception as e:
-        print(f"Error accessing resource path: {e}")
+        logging.debug(f"Error accessing resource path: {e}")
         return None
 
 

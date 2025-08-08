@@ -5,6 +5,7 @@ import math
 from fastapi import APIRouter, WebSocket, HTTPException
 from fastapi.responses import FileResponse
 from services.backend_service import get_watch_status
+import logging
 
 router = APIRouter()
 
@@ -21,10 +22,10 @@ def set_buffer_queue(queue):
 
 @router.websocket("/ws/changes")
 async def websocket_changes(websocket: WebSocket):
-    print(f"[ws/changes] New WebSocket connection from {websocket.client}")
+    logging.debug(f"[ws/changes] New WebSocket connection from {websocket.client}")
     await websocket.accept()
     global buffer_queue
-    
+
     # Helper function to clean NaN values from data before JSON serialization
     def clean_nan_values(obj):
         """Recursively clean NaN and None values from data structure"""
@@ -46,7 +47,7 @@ async def websocket_changes(websocket: WebSocket):
             return 0  # Replace None with 0 as well
         else:
             return obj
-    
+
     try:
         while True:
             # 优先从缓冲队列读取
@@ -60,18 +61,18 @@ async def websocket_changes(websocket: WebSocket):
             except Exception as e:
                 error_msg = {"error": str(e)}
                 # Ensure error messages don't contain NaN values either
-                clean_error = clean_nan_values(error_msg)  
+                clean_error = clean_nan_values(error_msg)
                 await websocket.send_text(json.dumps(clean_error, ensure_ascii=False))
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
 
     except Exception as e:
-        print(f"[ws/changes] WebSocket error: {e}")
+        logging.debug(f"[ws/changes] WebSocket error: {e}")
     finally:
-        print(f"[ws/changes] WebSocket connection closed: {websocket.client}")
+        logging.debug(f"[ws/changes] WebSocket connection closed: {websocket.client}")
         try:
             await websocket.close()
         except RuntimeError as e:
-            print(f"[ws/changes] WebSocket already closed: {e}")
+            logging.debug(f"[ws/changes] WebSocket already closed: {e}")
 
 
 @router.get("/api/watch/status")

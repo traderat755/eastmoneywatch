@@ -5,7 +5,7 @@ import pandas as pd
 from multiprocessing import Process
 from utils import get_resource_path
 from services.pick_service import load_picked_data, get_shared_picked_data
-
+import logging
 
 def clean_nan_values(records):
     """清理字典列表中的NaN值，确保JSON兼容"""
@@ -38,7 +38,7 @@ def initialize_backend_services(buffer_queue):
     """初始化后端服务，启动必要的子进程"""
     global concept_df, get_concepts_proc, get_changes_proc, initialization_completed
 
-    print("[sidecar] 开始初始化后端服务...", flush=True)
+    logging.debug("[sidecar] 开始初始化后端服务...")
 
     # Check if concepts.csv exists before calling getConcepts
     concepts_path = get_resource_path("static/concepts.csv")
@@ -50,56 +50,56 @@ def initialize_backend_services(buffer_queue):
                 sys.executable, "-c", "from concepts import getConcepts; getConcepts()"
             ], cwd=os.path.dirname(backend_dir))
             getConcepts_started = True
-            print("[sidecar] 启动时检测到缺少 concepts.csv，已自动调用 getConcepts 子进程", flush=True)
+            logging.debug("[sidecar] 启动时检测到缺少 concepts.csv，已自动调用 getConcepts 子进程")
 
             # 等待getConcepts完成
-            print("[sidecar] 等待 getConcepts 完成...", flush=True)
+            logging.debug("[sidecar] 等待 getConcepts 完成...")
             return_code = get_concepts_proc.wait()
             if return_code == 0:
-                print("[sidecar] getConcepts 执行成功", flush=True)
+                logging.debug("[sidecar] getConcepts 执行成功")
                 # 重新获取concepts_path，因为文件现在应该存在了
                 concepts_path = get_resource_path("static/concepts.csv")
             else:
-                print(f"[sidecar] getConcepts 执行失败，返回码: {return_code}", flush=True)
+                logging.debug(f"[sidecar] getConcepts 执行失败，返回码: {return_code}")
         except Exception as e:
-            print(f"[sidecar] 自动调用 getConcepts 失败: {e}", flush=True)
+            logging.debug(f"[sidecar] 自动调用 getConcepts 失败: {e}")
     else:
-        print("[sidecar] 检测到已存在 concepts.csv，跳过自动调用 getConcepts", flush=True)
+        logging.debug("[sidecar] 检测到已存在 concepts.csv，跳过自动调用 getConcepts")
 
     # Load concepts data regardless of whether it was just created or already existed
     try:
         # 检查文件是否存在
         if not concepts_path or not os.path.exists(concepts_path):
             if getConcepts_started:
-                print("[sidecar] getConcepts完成后仍无法找到concepts.csv文件，服务无法启动", flush=True)
+                logging.debug("[sidecar] getConcepts完成后仍无法找到concepts.csv文件，服务无法启动")
             else:
-                print("[sidecar] concepts.csv文件不存在，服务无法启动", flush=True)
+                logging.debug("[sidecar] concepts.csv文件不存在，服务无法启动")
             raise RuntimeError("concepts.csv文件不存在，无法启动服务")
         else:
             # 确保股票代码列被读取为字符串类型
             dtype_dict = {'股票代码': str, '板块代码': str}
             # 读取concepts.csv
             concepts_df = pd.read_csv(concepts_path, dtype={'板块代码': str, '板块名称': str})
-            print(f"[sidecar] concepts.csv读取完成，长度: {len(concepts_df)}", flush=True)
+            logging.debug(f"[sidecar] concepts.csv读取完成，长度: {len(concepts_df)}")
             # 读取concept_stocks.csv
             concept_stocks_path = get_resource_path("static/concept_stocks.csv")
             if not concept_stocks_path or not os.path.exists(concept_stocks_path):
-                print("[sidecar] concept_stocks.csv文件不存在，服务无法启动", flush=True)
+                logging.debug("[sidecar] concept_stocks.csv文件不存在，服务无法启动")
                 raise RuntimeError("concept_stocks.csv文件不存在，无法启动服务")
             concept_stocks_df = pd.read_csv(concept_stocks_path, dtype={'板块代码': str, '股票代码': str})
-            print(f"[sidecar] concept_stocks.csv读取完成，长度: {len(concept_stocks_df)}", flush=True)
+            logging.debug(f"[sidecar] concept_stocks.csv读取完成，长度: {len(concept_stocks_df)}")
             # 合并
             concept_df = pd.merge(concept_stocks_df, concepts_df, on='板块代码', how='left')
             concept_df = concept_df[['板块代码', '板块名称', '股票代码']]
-            print(f"[sidecar] 合并后concept_df长度: {len(concept_df)}", flush=True)
+            logging.debug(f"[sidecar] 合并后concept_df长度: {len(concept_df)}")
             # 清理NaN值
-            concept_df = concept_df.fillna('')
-            print(f"[sidecar] 清理NaN值后的concept_df长度: {len(concept_df)}", flush=True)
+            concept_df = concept_df.fillna('').infer_objects(copy=False)
+            logging.debug(f"[sidecar] 清理NaN值后的concept_df长度: {len(concept_df)}")
             if concept_df.empty:
-                print("[sidecar] concepts数据合并后为空，服务无法启动", flush=True)
+                logging.debug("[sidecar] concepts数据合并后为空，服务无法启动")
                 raise RuntimeError("concepts数据合并后为空，无法启动服务")
     except Exception as e:
-        print(f"[sidecar] Error loading concepts data: {e}", flush=True)
+        logging.debug(f"[sidecar] Error loading concepts data: {e}")
         raise RuntimeError(f"无法加载concepts数据: {e}")
 
     # 检查当天的changes文件是否已存在，如果存在则跳过prepareChanges
@@ -110,23 +110,23 @@ def initialize_backend_services(buffer_queue):
         changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
 
         if os.path.exists(changes_path):
-            print(f"[sidecar] 检测到当天的changes文件已存在: {changes_path}，跳过prepareChanges", flush=True)
+            logging.debug(f"[sidecar] 检测到当天的changes文件已存在: {changes_path}，跳过prepareChanges")
         else:
-            print(f"[sidecar] 当天的changes文件不存在: {changes_path}，开始运行 prepareChanges...", flush=True)
+            logging.debug(f"[sidecar] 当天的changes文件不存在: {changes_path}，开始运行 prepareChanges...")
             backend_dir = os.path.dirname(os.path.abspath(__file__))
             prepare_proc = subprocess.Popen([
                 sys.executable, "-c", f"from prepare import prepareChanges; prepareChanges('{current_date}')"
             ], cwd=os.path.dirname(backend_dir))
-            print(f"[sidecar] 已启动 prepareChanges 子进程，PID: {prepare_proc.pid}", flush=True)
+            logging.debug(f"[sidecar] 已启动 prepareChanges 子进程，PID: {prepare_proc.pid}")
 
             # 等待进程完成
             return_code = prepare_proc.wait()
             if return_code == 0:
-                print("[sidecar] prepareChanges 执行成功", flush=True)
+                logging.debug("[sidecar] prepareChanges 执行成功")
             else:
-                print(f"[sidecar] prepareChanges 执行失败，返回码: {return_code}", flush=True)
+                logging.debug(f"[sidecar] prepareChanges 执行失败，返回码: {return_code}")
     except Exception as e:
-        print(f"[sidecar] 检查changes文件或运行 prepareChanges 失败: {e}", flush=True)
+        logging.debug(f"[sidecar] 检查changes文件或运行 prepareChanges 失败: {e}")
 
     # 加载picked.csv到内存和共享内存中
     load_picked_data()
@@ -144,22 +144,22 @@ def initialize_backend_services(buffer_queue):
             current_changes_df = None
             try:
                 if os.path.exists(changes_path):
-                    print(f"[sidecar] 读取当前changes文件传递给worker: {changes_path}", flush=True)
+                    logging.debug(f"[sidecar] 读取当前changes文件传递给worker: {changes_path}")
                     current_changes_df = pd.read_csv(changes_path)
-                    current_changes_df = current_changes_df.fillna('')
+                    current_changes_df = current_changes_df.fillna('').infer_objects(copy=False)
                     # 字段校验
                     standard_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '板块名称', '四舍五入取整', '上下午', '时间排序', '标识']
                     df_columns = list(current_changes_df.columns)
                     if not all(col in df_columns for col in standard_columns):
-                        print(f"[backend_service] changes文件字段不匹配，收到字段: {df_columns}", flush=True)
-                        print(f"[backend_service] 内容预览: {current_changes_df.head(2).to_dict('records') if hasattr(current_changes_df, 'head') else str(current_changes_df)[:200]}", flush=True)
+                        logging.debug(f"[backend_service] changes文件字段不匹配，收到字段: {df_columns}")
+                        logging.debug(f"[backend_service] 内容预览: {current_changes_df.head(2).to_dict('records') if hasattr(current_changes_df, 'head') else str(current_changes_df)[:200]}")
                         current_changes_df = pd.DataFrame(columns=standard_columns)
                     else:
-                        print(f"[sidecar] 读取到changes数据，记录数: {len(current_changes_df)}", flush=True)
+                        logging.debug(f"[sidecar] 读取到changes数据，记录数: {len(current_changes_df)}")
                 else:
-                    print(f"[sidecar] changes文件不存在，传递空DataFrame: {changes_path}", flush=True)
+                    logging.debug(f"[sidecar] changes文件不存在，传递空DataFrame: {changes_path}")
             except Exception as e:
-                print(f"[sidecar] 读取changes文件失败: {e}", flush=True)
+                logging.debug(f"[sidecar] 读取changes文件失败: {e}")
                 current_changes_df = None
 
             get_changes_proc = Process(
@@ -175,14 +175,14 @@ def initialize_backend_services(buffer_queue):
                 daemon=True
             )
             get_changes_proc.start()
-            print("[sidecar] 已启动 worker_queue 子进程", flush=True)
+            logging.debug("[sidecar] 已启动 worker_queue 子进程")
         except Exception as e:
-            print(f"[sidecar] 启动 worker_queue 子进程失败: {e}", flush=True)
+            logging.debug(f"[sidecar] 启动 worker_queue 子进程失败: {e}")
     else:
-        print("[sidecar] worker_queue 子进程已在运行，跳过启动", flush=True)
+        logging.debug("[sidecar] worker_queue 子进程已在运行，跳过启动")
 
     initialization_completed = True
-    print("[sidecar] 后端服务初始化完成", flush=True)
+    logging.debug("[sidecar] 后端服务初始化完成")
 
 
 def start_get_concepts():
@@ -208,10 +208,10 @@ def queue_get_concepts():
         proc = subprocess.Popen([
             sys.executable, "-c", "from concepts import getConcepts; getConcepts()"
         ], cwd=backend_dir)
-        print(f"[queue_get_concepts] 已将getConcepts任务加入队列执行，PID: {proc.pid}", flush=True)
+        logging.debug(f"[queue_get_concepts] 已将getConcepts任务加入队列执行，PID: {proc.pid}")
         return {"status": "queued", "pid": proc.pid, "message": "getConcepts任务已加入队列执行"}
     except Exception as e:
-        print(f"[queue_get_concepts] 执行getConcepts任务失败: {e}", flush=True)
+        logging.debug(f"[queue_get_concepts] 执行getConcepts任务失败: {e}")
         return {"status": "error", "message": str(e)}
 
 
@@ -221,20 +221,20 @@ def reload_concept_df():
     try:
         concepts_path = get_resource_path("static/concepts.csv")
         if not concepts_path or not os.path.exists(concepts_path):
-            print("[reload_concept_df] concepts.csv文件不存在", flush=True)
+            logging.debug("[reload_concept_df] concepts.csv文件不存在")
             return {"status": "error", "message": "concepts.csv文件不存在"}
 
         # 重新加载concepts数据
         dtype_dict = {'股票代码': str, '板块代码': str}
         concept_df = pd.read_csv(concepts_path, dtype=dtype_dict)
-        concept_df = concept_df.fillna('')
+        concept_df = concept_df.fillna('').infer_objects(copy=False)
 
-        print(f"[reload_concept_df] 重新加载concept_df成功，记录数: {len(concept_df)}", flush=True)
+        logging.debug(f"[reload_concept_df] 重新加载concept_df成功，记录数: {len(concept_df)}")
 
         return {"status": "success", "message": "概念数据重新加载成功"}
 
     except Exception as e:
-        print(f"[reload_concept_df] 重新加载concept_df失败: {e}", flush=True)
+        logging.debug(f"[reload_concept_df] 重新加载concept_df失败: {e}")
         return {"status": "error", "message": str(e)}
 
 
@@ -251,45 +251,36 @@ def search_concepts(query):
             return {"status": "error", "message": "概念数据文件不存在"}
         concepts_df = pd.read_csv(concepts_path)
         concept_stocks_df = pd.read_csv(get_resource_path("static/concept_stocks.csv"), dtype={'板块代码': str, '股票代码': str})
-        print(f"[sidecar] concept_stocks.csv读取完成，长度: {len(concept_stocks_df)}", flush=True)
+        logging.debug(f"[sidecar] concept_stocks.csv读取完成，长度: {len(concept_stocks_df)}")
         # 合并
-        concept_df = pd.merge(concept_stocks_df, concepts_df, on='板块代码', how='left')
+        original_concept_df = pd.merge(concept_stocks_df, concepts_df, on='板块代码', how='left')
 
-        print(f"[api/concepts/search] 直接从文件读取concepts数据进行搜索: {concepts_path}", flush=True)
-
-        # 读取完整的原始数据
-        dtype_dict = {'股票代码': str, '板块代码': str}
-        original_concept_df = pd.read_csv(concepts_path, dtype=dtype_dict)
-        original_concept_df = original_concept_df.fillna('')
-
-
-        print(f"[api/concepts/search] 读取到{len(original_concept_df)}条原始概念数据", flush=True)
+        logging.debug(f"[api/concepts/search] 读取到{len(original_concept_df)}条原始概念数据")
 
         # 首先尝试精确匹配股票代码
-        print(f"[api/concepts/search] 查询参数: '{query}'", flush=True)
+        logging.debug(f"[api/concepts/search] 查询参数: '{query}'")
         exact_match_df = original_concept_df[
             original_concept_df['股票代码'].astype(str) == query
         ]
 
         if not exact_match_df.empty:
             # 如果找到精确匹配的股票代码，返回该股票的所有板块记录（不去重）
-            results = exact_match_df[['股票代码', '股票名称', '板块代码', '板块名称']]
-            print(f"[api/concepts/search] 精确匹配股票代码'{query}'，找到{len(results)}条板块记录", flush=True)
+            results = exact_match_df[['股票代码', '板块代码', '板块名称']]
+            logging.debug(f"[api/concepts/search] 精确匹配股票代码'{query}'，找到{len(results)}条板块记录")
 
             # 显示所有记录
             for _, row in results.iterrows():
-                print(f"  - {row['股票代码']} | {row['股票名称']} | {row['板块代码']} | {row['板块名称']}", flush=True)
+                logging.debug(f"  - {row['股票代码']} | {row['板块代码']} | {row['板块名称']}")
         else:
             # 如果没有精确匹配，进行模糊搜索
-            print(f"[api/concepts/search] 未找到精确匹配，进行模糊搜索", flush=True)
+            logging.debug(f"[api/concepts/search] 未找到精确匹配，进行模糊搜索")
             filtered_df = original_concept_df[
-                original_concept_df['股票名称'].astype(str).str.contains(query, na=False) |
                 original_concept_df['股票代码'].astype(str).str.contains(query, na=False)
             ]
 
             # 模糊搜索时也不去重，让前端自己处理
-            results = filtered_df[['股票代码', '股票名称', '板块代码', '板块名称']].head(50)
-            print(f"[api/concepts/search] 模糊搜索'{query}'，找到{len(results)}条结果", flush=True)
+            results = filtered_df[['股票代码', '板块代码', '板块名称']].head(50)
+            logging.debug(f"[api/concepts/search] 模糊搜索'{query}'，找到{len(results)}条结果")
 
         # 清理NaN值
         results = results.fillna('')
@@ -301,8 +292,10 @@ def search_concepts(query):
         return {"status": "success", "data": records}
 
     except Exception as e:
-        print(f"[api/concepts/search] 搜索失败: {e}", flush=True)
+        logging.debug(f"[api/concepts/search] 搜索失败: {e}")
         return {"status": "error", "message": str(e)}
+
+
 
 
 def get_concept_sectors():
@@ -316,17 +309,17 @@ def get_concept_sectors():
         sectors = concept_df[['板块代码', '板块名称']].drop_duplicates()
 
         # 清理NaN值
-        sectors = sectors.fillna('')
+        sectors = sectors.fillna('').infer_objects(copy=False)
 
         # 转换为字典并清理NaN值
         records = sectors.to_dict('records')
         records = clean_nan_values(records)
 
-        print(f"[api/concepts/sectors] 获取板块列表，共{len(records)}个板块", flush=True)
+        logging.debug(f"[api/concepts/sectors] 获取板块列表，共{len(records)}个板块")
         return {"status": "success", "data": records}
 
     except Exception as e:
-        print(f"[api/concepts/sectors] 获取板块列表失败: {e}", flush=True)
+        logging.debug(f"[api/concepts/sectors] 获取板块列表失败: {e}")
         return {"status": "error", "message": str(e)}
 
 
@@ -341,17 +334,17 @@ def get_stock_sectors(stock_code):
         stock_sectors = concept_df[concept_df['股票代码'] == stock_code][['板块代码', '板块名称']].drop_duplicates()
 
         # 清理NaN值
-        stock_sectors = stock_sectors.fillna('')
+        stock_sectors = stock_sectors.fillna('').infer_objects(copy=False)
 
         # 转换为字典并清理NaN值
         records = stock_sectors.to_dict('records')
         records = clean_nan_values(records)
 
-        print(f"[api/concepts/stock-sectors] 获取股票{stock_code}的板块列表，共{len(records)}个板块", flush=True)
+        logging.debug(f"[api/concepts/stock-sectors] 获取股票{stock_code}的板块列表，共{len(records)}个板块")
         return {"status": "success", "data": records}
 
     except Exception as e:
-        print(f"[api/concepts/stock-sectors] 获取股票板块列表失败: {e}", flush=True)
+        logging.debug(f"[api/concepts/stock-sectors] 获取股票板块列表失败: {e}")
         return {"status": "error", "message": str(e)}
 
 

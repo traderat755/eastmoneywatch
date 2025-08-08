@@ -1,13 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Edit, Trash2, Save, X } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-
-interface PickedStock {
-  股票代码: string;
-  股票名称: string;
-  板块代码: string;
-  板块名称: string;
-}
+import { usePicked, PickedStock } from '../lib/PickedContext';
 
 interface ConceptStock {
   股票代码: string;
@@ -22,32 +16,20 @@ interface Sector {
 }
 
 export function PickedPage() {
-  const [pickedStocks, setPickedStocks] = useState<PickedStock[]>([]);
+  const {
+    pickedStocks,
+    loading: isLoading,
+    addStock,
+    deleteStockByCode,
+    updateStock,
+  } = usePicked();
   const [searchResults, setSearchResults] = useState<ConceptStock[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [stockSectors, setStockSectors] = useState<Sector[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
   const [editingStock, setEditingStock] = useState<string | null>(null);
   const [editData, setEditData] = useState<PickedStock | null>(null);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
-
-  // 加载精选股票列表
-  const loadPickedStocks = async () => {
-    try {
-      const response = await fetch('http://localhost:61125/api/picked');
-      const data = await response.json();
-      if (data.status === 'success') {
-        setPickedStocks(data.data);
-      } else {
-        showMessage('error', '加载精选股票失败: ' + data.message);
-      }
-    } catch (error) {
-      showMessage('error', '加载精选股票失败: ' + error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // 加载板块列表
   const loadSectors = async () => {
@@ -139,76 +121,22 @@ export function PickedPage() {
   };
 
   // 添加股票到精选列表
-  const addStock = async (stock: ConceptStock) => {
-    try {
-      const response = await fetch('http://localhost:61125/api/picked', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(stock),
-      });
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        showMessage('success', '添加成功');
-        loadPickedStocks();
-        setSearchQuery('');
-        setSearchResults([]);
-      } else {
-        showMessage('error', '添加失败: ' + data.message);
-      }
-    } catch (error) {
-      showMessage('error', '添加失败: ' + error);
-    }
+  const handleAddStock = async (stock: ConceptStock) => {
+    await addStock(stock);
+    setSearchQuery('');
+    setSearchResults([]);
   };
 
   // 更新股票信息
-  const updateStock = async (stockCode: string, stockData: PickedStock) => {
-    try {
-      const response = await fetch(`http://localhost:61125/api/picked/${stockCode}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(stockData),
-      });
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        showMessage('success', '更新成功');
-        loadPickedStocks();
-        setEditingStock(null);
-        setEditData(null);
-      } else {
-        showMessage('error', '更新失败: ' + data.message);
-      }
-    } catch (error) {
-      showMessage('error', '更新失败: ' + error);
-    }
+  const handleUpdateStock = async (stockCode: string, stockData: PickedStock) => {
+    await updateStock(stockCode, stockData);
+    setEditingStock(null);
+    setEditData(null);
   };
 
   // 删除股票
-  const deleteStock = async (stockCode: string) => {
-    if (!confirm('确定要删除这只股票吗？')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`http://localhost:61125/api/picked/${stockCode}`, {
-        method: 'DELETE',
-      });
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        showMessage('success', '删除成功');
-        loadPickedStocks();
-      } else {
-        showMessage('error', '删除失败: ' + data.message);
-      }
-    } catch (error) {
-      showMessage('error', '删除失败: ' + error);
-    }
+  const handleDeleteStock = async (stockCode: string) => {
+    await deleteStockByCode(stockCode);
   };
 
   // 显示消息
@@ -236,12 +164,11 @@ export function PickedPage() {
   // 保存编辑
   const saveEdit = () => {
     if (editData && editingStock) {
-      updateStock(editingStock, editData);
+      handleUpdateStock(editingStock, editData);
     }
   };
 
   useEffect(() => {
-    loadPickedStocks();
     loadSectors();
   }, []);
 
@@ -320,7 +247,7 @@ export function PickedPage() {
                       </span>
                     </div>
                     <button
-                      onClick={() => addStock(stock)}
+                      onClick={() => handleAddStock(stock)}
                       className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
                     >
                       添加
@@ -445,7 +372,7 @@ export function PickedPage() {
                             <Edit className="h-4 w-4" />
                           </button>
                           <button
-                            onClick={() => deleteStock(stock.股票代码)}
+                            onClick={() => handleDeleteStock(stock.股票代码)}
                             className="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                             title="删除"
                           >
