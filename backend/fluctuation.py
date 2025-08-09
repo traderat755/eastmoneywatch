@@ -4,7 +4,7 @@ import pandas as pd
 import requests
 from typing import Optional
 import logging
-from utils import type_mapping
+from config import type_mapping
 
 
 def filter_stock_data(df: pd.DataFrame) -> Optional[pd.DataFrame]:

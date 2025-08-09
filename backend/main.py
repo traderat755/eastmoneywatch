@@ -2,6 +2,8 @@ import os
 import sys
 import asyncio
 import threading
+import logging
+import logging.handlers
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,30 +12,24 @@ from uvicorn import Config, Server
 from collections import deque
 from datetime import datetime
 from multiprocessing import Queue
-import logging
 
-# 设置整体logging层级为debug
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-from config import get_cors_origins
+from config import get_cors_origins, setup_logging
 from services.backend_service import initialize_backend_services
 from routes.api import router as api_router
 from routes.websocket import router as websocket_router, set_buffer_queue
 
-# 主进程与子进程共享的队列
+# 1. 设置日志
+LOG_LEVEL = logging.INFO
+log_queue, queue_listener = setup_logging(LOG_LEVEL)
+
+# 2. 创建用于在后端和websockets之间传输数据的缓冲区队列
 buffer_queue = Queue(maxsize=200)
 
 # Global variables
-server_instance = None  # Global reference to the Uvicorn server instance
-log_messages = deque(maxlen=1000)  # Store last 1000 log messages
-active_websockets = set()  # Store active WebSocket connections
-watch_process = None  # Global variable for watch process
+server_instance = None
+log_messages = deque(maxlen=1000)
+active_websockets = set()
+watch_process = None
 
 
 app = FastAPI(
@@ -50,7 +46,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     logging.error(f"[validation_error] 请求头: {dict(request.headers)}")
     logging.error(f"[validation_error] 错误详情: {exc.errors()}")
     
-    # 尝试读取请求体
     try:
         body = await request.body()
         logging.error(f"[validation_error] 请求体: {body.decode('utf-8')}")
@@ -71,14 +66,23 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def startup_event():
     """FastAPI 启动时的事件处理"""
     logging.debug("[sidecar] FastAPI 应用启动中...")
-
-    # Set buffer queue for websocket module
     set_buffer_queue(buffer_queue)
 
-    # 在后台线程中初始化服务，避免阻塞启动
-    init_thread = threading.Thread(target=initialize_backend_services, args=(buffer_queue,))
+    # 在后台线程中初始化服务, 并传递 buffer_queue 和 log_queue
+    init_thread = threading.Thread(
+        target=initialize_backend_services, 
+        args=(buffer_queue, log_queue, LOG_LEVEL)  # Pass both queues
+    )
     init_thread.daemon = True
     init_thread.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """FastAPI 关机时的事件处理"""
+    logging.debug("[sidecar] FastAPI 应用正在关闭...")
+    if queue_listener:
+        queue_listener.stop()
+        logging.debug("[sidecar] 日志队列监听器已停止。")
 
 
 # Include routers
@@ -92,7 +96,7 @@ logging.debug(f"[CORS] 配置的origins: {origins}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,  # Required for WebSocket
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -104,42 +108,33 @@ async def broadcast_message(message: str):
     formatted_message = f"[{timestamp}] {message}"
     log_messages.append(formatted_message)
 
-    # 广播到所有活动的WebSocket连接
     disconnected = set()
     for websocket in active_websockets:
         try:
             await websocket.send_text(formatted_message)
         except Exception:
             disconnected.add(websocket)
-
-    # 移除断开的连接
     active_websockets.difference_update(disconnected)
 
 
 def output_reader(pipe, name):
-    """从管道读取输出并打印"""
+    """从管道读取输出并打印 (现在由QueueListener处理，此函数可能不再需要)"""
     for line in pipe:
         message = f"[{name}] {line.strip()}"
         logging.debug(message)
-        # 使用asyncio创建一个新的事件循环来发送WebSocket消息
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(broadcast_message(message))
         loop.close()
 
 
-# Programmatically force shutdown this sidecar.
 def kill_process():
     global server_instance
     if server_instance is not None:
-        try:
-            server_instance.should_exit = True  # 通知 Uvicorn 退出
-        except Exception:
-            pass
-    os._exit(0)  # 强制退出整个进程
+        server_instance.should_exit = True
+    os._exit(0)
 
 
-# Programmatically startup the api server
 def start_api_server(**kwargs):
     global server_instance
     logging.debug(f"[sidecar] 准备启动API服务器")
@@ -148,60 +143,46 @@ def start_api_server(**kwargs):
             logging.debug(f"[sidecar] 正在启动API服务器...")
             config = Config(app, host="0.0.0.0", log_level="debug")
             server_instance = Server(config)
-            # Start the ASGI server
-            # Use a more robust approach to run the server
-            try:
-                logging.debug(f"[sidecar] 服务器配置完成，开始运行")
-                server_instance.run()
-            except Exception as e:
-                logging.debug(f"[sidecar] API服务器运行错误: {e}")
+            logging.debug(f"[sidecar] 服务器配置完成，开始运行")
+            server_instance.run()
         else:
-            logging.debug(
-                "[sidecar] 无法启动新服务器。服务器实例已在运行中。",
-                flush=True,
-            )
+            logging.debug("[sidecar] 服务器实例已在运行中。")
     except Exception as e:
-        logging.debug(f"[sidecar] 错误，启动API服务器失败: {e}")
+        logging.error(f"[sidecar] 启动API服务器失败: {e}", exc_info=True)
 
 
-# Handle the stdin event loop. This can be used like a CLI.
 def stdin_loop():
     logging.debug("[sidecar] Waiting for commands...")
     try:
-        while True:
-            # Read input from stdin.
-            user_input = sys.stdin.readline().strip()
-
-            # Check if the input matches one of the available functions
-            match user_input:
-                case "sidecar shutdown":
-                    logging.debug("[sidecar] Received 'sidecar shutdown' command.")
-                    kill_process()
-                case _:
-                    logging.debug(
-                        f"[sidecar] Invalid command [{user_input}]. Try again."
-                    )
+        for line in sys.stdin:
+            user_input = line.strip()
+            if user_input == "sidecar shutdown":
+                logging.debug("[sidecar] Received 'sidecar shutdown' command.")
+                kill_process()
+                break
+            else:
+                logging.debug(f"[sidecar] Invalid command [{user_input}]. Try again.")
     except Exception as e:
-        logging.debug(f"[sidecar] stdin_loop error: {e}")
+        logging.error(f"[sidecar] stdin_loop error: {e}", exc_info=True)
 
 
-# Start the input loop in a separate thread
 def start_input_thread():
     try:
         input_thread = threading.Thread(target=stdin_loop)
-        input_thread.daemon = True  # so it exits when the main program exits
+        input_thread.daemon = True
         input_thread.start()
     except Exception as e:
-        logging.debug(f"[sidecar] Failed to start input handler: {e}")
+        logging.error(f"[sidecar] Failed to start input handler: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
-    # Listen for stdin from parent process
     start_input_thread()
-
-    # Starts API server, blocks further code from execution.
     try:
         start_api_server()
     except Exception as e:
-        logging.debug(f"[sidecar] Fatal error in main thread: {e}")
+        logging.critical(f"[sidecar] Fatal error in main thread: {e}", exc_info=True)
         sys.exit(1)
+    finally:
+        # 确保listener在程序退出时被停止
+        if queue_listener:
+            queue_listener.stop()

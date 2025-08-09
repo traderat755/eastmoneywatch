@@ -21,15 +21,17 @@ def apply_sorting(df,concept_df, uplimit_cache=None, for_frontend=True):
             return df
 
         #  为股票异动数据添加概念板块信息（使用过滤后的concept_df）
-        # 先用picked_df拼接，再用concept_df拼接
+        df = add_concept_data_to_changes(df, concept_df)
         with_picked_df = add_concept_data_to_changes(df, picked_df)
-        with_concept_df = add_concept_data_to_changes(df, concept_df)
-        df = sort_by_board_order(with_concept_df, concept_df)
-        # 拼接起来，with_picked_df在前，with_concept_df在后
-        df = pd.concat([with_picked_df, with_concept_df], ignore_index=True)
-        logging.debug(f"[apply_sorting] 拼接后数据量: {len(df)} (picked优先)")
+        logging.debug(f"[apply_sorting] 添加picked_df概念信息后数据量: {len(df)}")
+
+        if len(with_picked_df)>0:
+            df = pd.concat([with_picked_df, df], ignore_index=True)
+        
         # 按时间+股票代码去重，保留第一次出现的（即picked优先）
         df = df.drop_duplicates(subset=['股票代码','时间'], keep='first').reset_index(drop=True)
+        logging.debug(f"[apply_sorting] 去重后df列: {list(df.columns)}")
+        logging.debug(f"[apply_sorting] 去重后df前3行数据:\n{df.head(3)}")
 
         # 4. 添加上下午字段和uplimit信息
         if '时间' in df.columns:
@@ -45,6 +47,9 @@ def apply_sorting(df,concept_df, uplimit_cache=None, for_frontend=True):
             sector_code_col = None
             sector_name_col = None
 
+            # 添加调试日志
+            logging.debug(f"[apply_sorting] 当前df的所有列: {list(df.columns)}")
+
             # 寻找正确的板块代码和名称列
             for col in ['板块代码', '板块代码_x', '板块代码_y']:
                 if col in df.columns:
@@ -56,20 +61,39 @@ def apply_sorting(df,concept_df, uplimit_cache=None, for_frontend=True):
                     sector_name_col = col
                     break
 
+            # 添加调试日志
+            logging.debug(f"[apply_sorting] 找到的板块代码列: {sector_code_col}")
+            logging.debug(f"[apply_sorting] 找到的板块名称列: {sector_name_col}")
+
             # 构建最终列名列表，去掉板块代码列以减少数据传输量
             final_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '四舍五入取整', '上下午', '标识']
-            # 只添加板块名称，不添加板块代码
+            # 添加板块名称和板块代码
             if sector_name_col:
                 final_columns.insert(1, sector_name_col)
+                logging.debug(f"[apply_sorting] 已将板块名称列添加到final_columns: {sector_name_col}")
+            else:
+                logging.debug(f"[apply_sorting] 未找到板块名称列，不添加到final_columns")
+                
+            if sector_code_col:
+                final_columns.insert(2, sector_code_col)
+                logging.debug(f"[apply_sorting] 已将板块代码列添加到final_columns: {sector_code_col}")
+            else:
+                logging.debug(f"[apply_sorting] 未找到板块代码列，不添加到final_columns")
 
             available_columns = [col for col in final_columns if col in df.columns]
+            logging.debug(f"[apply_sorting] available_columns: {available_columns}")
             result_df = df[available_columns].copy()
+            logging.debug(f"[apply_sorting] result_df前3行数据:\n{result_df.head(3)}")
 
             # 如果使用了带后缀的列名，重命名为标准名称
             if sector_name_col and sector_name_col != '板块名称':
                 result_df = result_df.rename(columns={sector_name_col: '板块名称'})
+                
+            if sector_code_col and sector_code_col != '板块代码':
+                result_df = result_df.rename(columns={sector_code_col: '板块代码'})
 
             logging.debug(f"[apply_sorting] 处理完成，返回{len(result_df)}条记录给前端，列: {list(result_df.columns)}")
+            logging.debug(f"[apply_sorting] 最终返回数据前3行:\n{result_df.head(3)}")
         else:
             # 为存储返回完整数据，确保包含股票代码
             result_df = df.copy()
@@ -90,36 +114,23 @@ def apply_sorting(df,concept_df, uplimit_cache=None, for_frontend=True):
 def add_concept_data_to_changes(df, concept_df):
     """为股票异动数据添加概念板块信息"""
     try:
-        # 检查必要的列是否存在
-        if '股票代码' not in df.columns:
-            logging.debug("[add_concept_data_to_changes] df中缺少'股票代码'列，跳过概念数据添加")
-            return df
-
-        if concept_df is None or concept_df.empty:
-            logging.debug("[add_concept_data_to_changes] concept_df为空，跳过概念数据添加")
-            return df
-
-        if '股票代码' not in concept_df.columns:
-            logging.debug("[add_concept_data_to_changes] concept_df中缺少'股票代码'列，跳过概念数据添加")
-            return df
 
         # 检查合并所需的列
         available_columns = ['股票代码'] + [col for col in ['板块名称', '板块代码'] if col in concept_df.columns]
-
-        if len(available_columns) < 2:  # 至少需要股票代码和一个板块信息列
-            logging.debug(f"[add_concept_data_to_changes] concept_df缺少必要的列，可用列: {available_columns}")
-            return df
+        logging.debug(f"[add_concept_data_to_changes] concept_df列: {list(concept_df.columns)}")
+        logging.debug(f"[add_concept_data_to_changes] concept_df前3行数据:\n{concept_df.head(3)}")
+        logging.debug(f"[add_concept_data_to_changes] available_columns: {available_columns}")
 
         # 合并概念信息到股票异动数据
         first_concept_df = concept_df.drop_duplicates(subset=['股票代码'], keep='first').copy()
+        logging.debug(f"[add_concept_data_to_changes] first_concept_df前3行数据:\n{first_concept_df.head(3)}")
         df['股票代码'] = df['股票代码'].astype(str)
         first_concept_df['股票代码'] = first_concept_df['股票代码'].astype(str)
 
-        # 保存原始数据，确保股票代码不丢失
-        original_stock_codes = df['股票代码'].copy()
-
         # 只合并概念相关的列，排除股票代码避免重复
         merge_columns = [col for col in available_columns if col != '股票代码']
+        logging.debug(f"[add_concept_data_to_changes] merge_columns: {merge_columns}")
+
         if merge_columns:
             # 检查是否有重复列名，如果有则先删除df中的同名列
             overlapping_cols = [col for col in merge_columns if col in df.columns]
@@ -127,18 +138,20 @@ def add_concept_data_to_changes(df, concept_df):
                 logging.debug(f"[add_concept_data_to_changes] 发现重复列，将删除df中的: {overlapping_cols}")
                 df = df.drop(columns=overlapping_cols)
 
+            # 执行合并
             df = pd.merge(df, first_concept_df[['股票代码'] + merge_columns], on='股票代码', how='left')
+            logging.debug(f"[add_concept_data_to_changes] 合并后df前3行数据:\n{df.head(3)}")
 
-        # 确保股票代码列始终存在且不为空
-        if '股票代码' not in df.columns or df['股票代码'].isna().any():
-            if '股票代码' in df.columns:
-                missing_codes_mask = df['股票代码'].isna()
-                df.loc[missing_codes_mask, '股票代码'] = original_stock_codes[missing_codes_mask]
-            else:
-                df['股票代码'] = original_stock_codes
+        # 删除板块名称为空的行（按行删除，不是按列删除）
+        if '板块名称' in df.columns:
+            before_count = len(df)
+            df = df.dropna(subset=['板块名称'], axis=0, inplace=False)
+            after_count = len(df)
+            logging.debug(f"[add_concept_data_to_changes] 删除板块名称为空的行: {before_count} -> {after_count}")
 
         logging.debug(f"[add_concept_data_to_changes] 合并完成，最终列: {list(df.columns)}")
         logging.debug(f"[add_concept_data_to_changes] 股票代码列非空数量: {df['股票代码'].notna().sum()}/{len(df)}")
+        logging.debug(f"[add_concept_data_to_changes] 合并后df前3行数据:\n{df.head(3)}")
 
         return df
 
@@ -146,36 +159,4 @@ def add_concept_data_to_changes(df, concept_df):
         logging.debug(f"[add_concept_data_to_changes] 添加概念板块信息时出错: {e}")
         import traceback
         logging.debug(f"[add_concept_data_to_changes] 详细错误信息: {traceback.format_exc()}")
-        return df
-
-
-def sort_by_board_order(df, board_order):
-    """按照板块顺序对DataFrame进行排序"""
-    try:
-        # 寻找板块代码列，支持多种可能的列名
-        sector_col = None
-        possible_cols = ['板块代码', '板块代码_x', '板块代码_y']
-
-        for col in possible_cols:
-            if col in df.columns:
-                sector_col = col
-                break
-
-        if sector_col is None:
-            logging.debug(f"[sort_by_board_order] 缺少板块代码列，无法排序。可用列: {list(df.columns)}")
-            return df
-
-        logging.debug(f"[sort_by_board_order] 使用板块代码列: {sector_col}")
-
-        # 创建板块排序映射
-        sector_order_map = {sector: idx for idx, sector in enumerate(board_order)}
-        df['_board_order'] = df[sector_col].map(lambda x: sector_order_map.get(x, len(board_order)))
-
-        # 按板块顺序排序
-        df = df.sort_values('_board_order').drop('_board_order', axis=1)
-
-        return df
-
-    except Exception as e:
-        logging.debug(f"[sort_by_board_order] 按板块排序时出错: {e}")
         return df
