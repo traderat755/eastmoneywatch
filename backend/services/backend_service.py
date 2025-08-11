@@ -153,7 +153,6 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
         concept_stocks_df = pd.read_csv(concept_stocks_path, dtype=dtype_dict)
         concept_df = pd.merge(concept_stocks_df, concepts_df_part1, on='板块代码', how='left')
         concept_df = concept_df[['板块代码', '板块名称', '股票代码']]
-        concept_df = concept_df.dropna()
         logging.debug(f"[sidecar] Concepts data loaded and merged. Total records: {len(concept_df)}")
         if concept_df.empty:
             raise RuntimeError("Concepts data is empty after merge.")
@@ -294,6 +293,7 @@ def search_concepts(query):
         concepts_df_part = pd.read_csv(concepts_path)
         concept_stocks_df = pd.read_csv(concept_stocks_path, dtype={'板块代码': str, '股票代码': str})
         original_concept_df = pd.merge(concept_stocks_df, concepts_df_part, on='板块代码', how='left')
+        original_concept_df.dropna(subset=['板块名称'], inplace=True)
 
         logging.debug(f"[api/concepts/search] 查询: '{query}'")
         exact_match_df = original_concept_df[original_concept_df['股票代码'].astype(str) == query]
