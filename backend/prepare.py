@@ -14,6 +14,9 @@ def prepareChanges(current_date:str):
     for code, type_value in type_mapping.items():
         logging.debug(f'[prepare] 正在请求类型: {type_value} (symbol={type_value})')
         df = ak.stock_changes_em(symbol=type_value)
+        if df is None or df.empty:
+            logging.warning(f'[prepare] 获取类型 {type_value} 数据为空，跳过处理')
+            continue
         logging.debug(df.columns)
         df['类型'] = type_value  # 使用type_value而不是df['板块']
         df = df.drop(['板块'], axis=1)  # 添加axis=1参数
@@ -21,7 +24,13 @@ def prepareChanges(current_date:str):
         all_df.append(df)
         logging.debug('[prepare] 等待5秒...')
         time.sleep(5)
-    df = pd.concat(all_df, ignore_index=True)
+    if not all_df:
+        logging.warning('[prepare] 所有类型数据均为空，生成空的输出文件')
+        output_df = pd.DataFrame()
+        save_path = os.path.join(static_dir, f"changes_{current_date}.csv")
+        output_df.to_csv(save_path, index=False, encoding='utf-8-sig')
+        logging.debug(f'[prepare] 已保存空文件到: {save_path}')
+        return
 
     # 确保时间列是字符串类型
     df['时间'] = df['时间'].astype(str)

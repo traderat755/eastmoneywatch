@@ -63,16 +63,20 @@ def parse_jsonp(jsonp_str):
 
 def getChanges():
     """获取股票异动数据，不包含概念板块数据的拼接"""
+    try:
+        response = requests.get(
+            f'https://push2ex.eastmoney.com/getAllStockChanges?type=={','.join(type_mapping.keys())}&cb=jQuery35108409427522251944_1753773534498&ut=7eea3edcaed734bea9cbfc24409ed989&pageindex=0&pagesize=1000&dpt=wzchanges&_=1753773534514',
+            headers={**HEADERS, 'Referer': 'https://quote.eastmoney.com/changes/'},
+        )
 
-    response = requests.get(
-        f'https://push2ex.eastmoney.com/getAllStockChanges?type={type_mapping.keys()}&cb=jQuery35108409427522251944_1753773534498&ut=7eea3edcaed734bea9cbfc24409ed989&pageindex=0&pagesize=1000&dpt=wzchanges&_=1753773534514',
-        headers={**HEADERS, 'Referer': 'https://quote.eastmoney.com/changes/'},
-    )
+        # 解析JSONP响应
+        data = parse_jsonp(response.text)
 
-    # 解析JSONP响应
-    data = parse_jsonp(response.text)
+        # 检查数据是否存在且有效
+        if not data or data['data'] is None:
+            logging.debug("[getChanges] 过滤后没有符合条件的数据")
+            return pd.DataFrame()
 
-    if data and 'data' in data and 'allstock' in data['data']:
         # 转换为DataFrame
         df = pd.DataFrame(data['data']['allstock'])
 
@@ -98,6 +102,11 @@ def getChanges():
                     df['涨跌幅'] = info_df[0]
 
         df = filter_stock_data(df)
+        
+        # 如果过滤后没有数据，返回空DataFrame
+        if df is None or df.empty:
+            logging.debug("[getChanges] 过滤后没有符合条件的数据")
+            return pd.DataFrame()
 
         # 转换为指定的输出格式
         def format_time(tm):
@@ -155,6 +164,9 @@ def getChanges():
         html_df = html_df.drop_duplicates(subset=['股票代码', '时间'], keep='last')
 
         return html_df
+    except Exception as e:
+        logging.error(f"[getChanges] 发生异常: {str(e)}", exc_info=True)
+        return pd.DataFrame()
 
 
 
@@ -178,8 +190,3 @@ def getRisingConcepts():
     data = parse_jsonp(response.text)['data']['diff']
     bkcodes = [ x['f12'] for x in data if int(x['f20'])<5000000000000 and not '昨日' in x['f14']]
     return bkcodes
-
-
-
-
-

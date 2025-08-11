@@ -22,8 +22,8 @@ def is_trading_time():
         current_minute = now.minute
         current_time_minutes = current_hour * 60 + current_minute
 
-        # 交易时间：上午9:30-11:30，下午13:00-15:00
-        morning_start = 9 * 60 + 30  # 9:30
+        # 交易时间：上午9:20-11:30，下午13:00-15:00
+        morning_start = 9 * 60 + 20  # 9:20
         morning_end = 11 * 60 + 30   # 11:30
         afternoon_start = 13 * 60     # 13:00
         afternoon_end = 15 * 60       # 15:00
