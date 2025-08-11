@@ -9,7 +9,7 @@ from datetime import datetime
 from fluctuation import getChanges
 from utils import setup_static_directory, uplimit10jqka, get_latest_trade_date, is_trading_time
 from data_processor import apply_sorting
-from services.pick_service import set_shared_picked_data
+from services.pick_service import set_shared_picked_data, get_shared_picked_manager
 
 
 def _setup_child_logging(q: Queue, level):
@@ -42,10 +42,6 @@ def worker(log_q: Queue, log_level, data_q: Queue, interval=5, initial_concept_d
 
     logging.debug("[worker_queue] 启动，日志已重定向到队列。")
     
-    if shared_picked_data is not None:
-        set_shared_picked_data(shared_picked_data)
-        logging.debug(f"[worker_queue] set_shared_picked_data: id={id(shared_picked_data)}, keys={list(shared_picked_data.keys()) if shared_picked_data else 'None'}")
-
     static_dir = setup_static_directory()
     current_date = get_latest_trade_date()
     changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
@@ -58,6 +54,11 @@ def worker(log_q: Queue, log_level, data_q: Queue, interval=5, initial_concept_d
     last_write = time.time()
     last_date = current_date
     uplimit_cache = {}
+
+    if shared_picked_data is not None:
+        set_shared_picked_data(shared_picked_data)
+        logging.debug(f"[worker_queue] set_shared_picked_data: id={id(shared_picked_data)}, keys={list(shared_picked_data.keys()) if shared_picked_data else 'None'}")
+
 
     while True:
         try:

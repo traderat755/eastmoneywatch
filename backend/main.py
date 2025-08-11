@@ -13,7 +13,7 @@ from collections import deque
 from datetime import datetime
 from multiprocessing import Queue
 
-from config import get_cors_origins, setup_logging
+from config import setup_logging
 from services.backend_service import initialize_backend_services
 from routes.api import router as api_router
 from routes.websocket import router as websocket_router, set_buffer_queue
@@ -90,12 +90,11 @@ app.include_router(api_router)
 app.include_router(websocket_router)
 
 # 获取CORS origins配置
-origins = get_cors_origins()
-logging.debug(f"[CORS] 配置的origins: {origins}")
+logging.debug(f"[CORS] 配置的origins: 允许所有内网请求")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d+.\d+.\d+|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?|tauri://localhost",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

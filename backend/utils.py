@@ -94,7 +94,7 @@ def get_resource_path(relative_path):
         if hasattr(sys, '_MEIPASS'):
             base_path = sys._MEIPASS
         else:
-            base_path = os.path.dirname(os.path.abspath(__file__))
+            base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
         full_path = os.path.join(base_path, relative_path)
         if os.path.exists(full_path):
@@ -158,5 +158,5 @@ def uplimit10jqka(date:str=''):
     result = response.json()['data']['info']
 
     df = pd.DataFrame(result)
-    df.to_csv('static/uplimit.csv')
+    # df.to_csv('static/uplimit.csv')
     return df

@@ -54,12 +54,14 @@ def _setup_child_logging(q: Queue, level):
     logger.handlers = [queue_handler]
 
 
-def run_get_concepts(q: Queue, level):
+def run_get_concepts(q: Queue, level, concepts_path=None, concept_stocks_path=None):
     """子进程任务：配置日志并运行 getConcepts。"""
     _setup_child_logging(q, level)
     try:
-        logging.debug("Starting getConcepts task...")
-        getConcepts()
+        logging.debug(f"Starting getConcepts task...{concepts_path}, {concept_stocks_path}")
+    
+        getConcepts(concepts_path, concept_stocks_path)
+
         logging.info("getConcepts task finished successfully.")
     except Exception as e:
         logging.error(f"getConcepts task failed: {e}", exc_info=True)
@@ -86,6 +88,18 @@ log_queue: Queue = None  # Will be set by initialize_backend_services
 log_level = logging.INFO # Default log level
 
 
+def _get_concept_file_paths():
+    """获取概念文件路径的辅助函数"""
+    from utils import get_resource_path
+    static_dir = get_resource_path("")
+    if static_dir is None:
+        # 如果 get_resource_path 返回 None，则回退到原来的逻辑
+        static_dir = setup_static_directory()
+    concepts_path = os.path.join(static_dir, "concepts.csv")
+    concept_stocks_path = os.path.join(static_dir, "concept_stocks.csv")
+    return static_dir, concepts_path, concept_stocks_path
+
+
 def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
     """
     初始化后端服务，启动必要的子进程。
@@ -96,12 +110,17 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
     log_level = level # Store the log level globally
 
     logging.debug("[sidecar] 开始初始化后端服务...")
-
-    concepts_path = get_resource_path("static/concepts.csv")
-    if not os.path.exists(concepts_path):
+    static_dir, concepts_path, concept_stocks_path = _get_concept_file_paths()
+    if concepts_path is None or not os.path.exists(concepts_path):
         try:
             logging.debug("[sidecar] 缺少 concepts.csv，启动 getConcepts 子进程...")
-            get_concepts_proc = Process(target=run_get_concepts, args=(log_queue, log_level), daemon=True)
+            
+            # Calculate paths directly instead of relying on get_resource_path in subprocess
+            os.makedirs(static_dir, exist_ok=True)
+            
+            logging.debug(f"[sidecar] 将使用路径: {concepts_path} 和 {concept_stocks_path}")
+            
+            get_concepts_proc = Process(target=run_get_concepts, args=(log_queue, log_level, concepts_path, concept_stocks_path), daemon=True)
             get_concepts_proc.start()
             
             logging.debug("[sidecar] 等待 getConcepts 完成...")
@@ -109,7 +128,9 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
             
             if get_concepts_proc.exitcode == 0:
                 logging.debug("[sidecar] getConcepts 执行成功")
-                concepts_path = get_resource_path("static/concepts.csv")  # Re-check path
+                # No need to re-check with get_resource_path since we already know the path
+                if not os.path.exists(concepts_path):
+                    raise RuntimeError(f"getConcepts执行成功但文件不存在: {concepts_path}")
             else:
                 logging.error(f"[sidecar] getConcepts 执行失败，退出码: {get_concepts_proc.exitcode}")
                 raise RuntimeError("getConcepts failed to execute.")
@@ -120,19 +141,19 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
         logging.debug("[sidecar] 检测到已存在 concepts.csv，跳过自动调用 getConcepts")
 
     try:
-        if not os.path.exists(concepts_path):
+        if concepts_path is None or not os.path.exists(concepts_path):
             raise RuntimeError("concepts.csv 文件不存在，服务无法启动")
         
         dtype_dict = {'股票代码': str, '板块代码': str}
         concepts_df_part1 = pd.read_csv(concepts_path, dtype={'板块代码': str, '板块名称': str})
-        concept_stocks_path = get_resource_path("static/concept_stocks.csv")
-        if not os.path.exists(concept_stocks_path):
+        concept_stocks_path = get_resource_path("concept_stocks.csv")
+        if concept_stocks_path is None or not os.path.exists(concept_stocks_path):
             raise RuntimeError("concept_stocks.csv 文件不存在，服务无法启动")
         
         concept_stocks_df = pd.read_csv(concept_stocks_path, dtype=dtype_dict)
         concept_df = pd.merge(concept_stocks_df, concepts_df_part1, on='板块代码', how='left')
         concept_df = concept_df[['板块代码', '板块名称', '股票代码']]
-        concept_df = concept_df.fillna('').infer_objects(copy=False)
+        concept_df = concept_df.dropna()
         logging.debug(f"[sidecar] Concepts data loaded and merged. Total records: {len(concept_df)}")
         if concept_df.empty:
             raise RuntimeError("Concepts data is empty after merge.")
@@ -141,7 +162,7 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
         raise
 
     try:
-        static_dir = setup_static_directory()
+        static_dir, _, _ = _get_concept_file_paths()
         current_date = get_latest_trade_date()
         changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
 
@@ -160,8 +181,25 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
     except Exception as e:
         logging.error(f"[sidecar] 检查或运行 prepareChanges 失败: {e}", exc_info=True)
 
-    load_picked_data()
-    shared_picked_data = get_shared_picked_data()
+    # 加载picked数据并确保共享内存完全初始化
+    load_picked_data(static_dir)
+    
+    # 强制同步数据到共享内存并验证
+    from services.pick_service import force_sync_to_shared_memory, get_shared_picked_data, shared_picked_manager
+    
+    # 强制同步确保数据完整传递
+    record_count = force_sync_to_shared_memory()
+    logging.debug(f"[sidecar] 强制同步完成，共享内存中有 {record_count} 条记录")
+    
+    # 获取共享内存引用
+    shared_picked_data_ref = get_shared_picked_data()
+    shared_picked_manager_ref = shared_picked_manager
+    
+    # 验证共享内存状态
+    if shared_picked_data_ref is not None and 'records' in shared_picked_data_ref:
+        logging.debug(f"[sidecar] 共享内存验证成功，records数量: {len(shared_picked_data_ref['records'])}")
+    else:
+        logging.error("[sidecar] 共享内存验证失败，worker进程可能无法访问picked数据")
 
     if get_changes_proc is None or not get_changes_proc.is_alive():
         try:
@@ -171,9 +209,9 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
                 current_changes_df = pd.read_csv(changes_path)
                 current_changes_df = current_changes_df.fillna('').infer_objects(copy=False)
                 current_changes_df['板块名称'] = '未知板块'
-                standard_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '板块名称', '四舍五入取整', '上下午', '时间排序', '标识']
+                standard_columns = ['股票代码', '板块名称', '板块代码', '时间', '名称', '相关信息', '类型', '四舍五入取整', '上下午','标识']
                 if not all(col in current_changes_df.columns for col in standard_columns):
-                    logging.warning(f"[backend_service] changes文件字段不匹配，将使用空DataFrame。")
+                    logging.warning(f"[backend_service] changes文件字段{current_changes_df.columns}不匹配，将使用空DataFrame。")
                     current_changes_df = pd.DataFrame(columns=standard_columns)
             
             # 注意：worker_queue.worker也需要修改以接受log_queue作为第一个参数
@@ -187,7 +225,7 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
                     concept_df.copy() if concept_df is not None else None,
                     current_changes_df.copy() if current_changes_df is not None else None,
                     300,
-                    shared_picked_data
+                    shared_picked_data_ref  # 传递共享数据引用
                 ),
                 daemon=True
             )
@@ -211,7 +249,10 @@ def start_get_concepts():
     if get_concepts_proc is not None and get_concepts_proc.is_alive():
         return {"status": "already running", "pid": get_concepts_proc.pid}
 
-    get_concepts_proc = Process(target=run_get_concepts, args=(log_queue, log_level), daemon=True)
+    # For manual start, use default paths
+    static_dir, concepts_path, concept_stocks_path = _get_concept_file_paths()
+    
+    get_concepts_proc = Process(target=run_get_concepts, args=(log_queue, log_level, concepts_path, concept_stocks_path), daemon=True)
     get_concepts_proc.start()
     logging.info(f"Started getConcepts process with PID: {get_concepts_proc.pid}")
     return {"status": "started", "pid": get_concepts_proc.pid}
@@ -224,7 +265,10 @@ def queue_get_concepts():
         return {"status": "error", "message": "服务尚未初始化"}
         
     try:
-        proc = Process(target=run_get_concepts, args=(log_queue, log_level), daemon=True)
+        # For queued execution, use default paths
+        static_dir, concepts_path, concept_stocks_path = _get_concept_file_paths()
+        
+        proc = Process(target=run_get_concepts, args=(log_queue, log_level, concepts_path, concept_stocks_path), daemon=True)
         proc.start()
         logging.info(f"[queue_get_concepts] 已将getConcepts任务加入队列执行，PID: {proc.pid}")
         return {"status": "queued", "pid": proc.pid, "message": "getConcepts任务已加入队列执行"}
@@ -239,8 +283,11 @@ def search_concepts(query):
         if not query:
             return {"status": "success", "data": []}
 
-        concepts_path = get_resource_path("static/concepts.csv")
-        concept_stocks_path = get_resource_path("static/concept_stocks.csv")
+        concepts_path = get_resource_path("concepts.csv")
+        concept_stocks_path = get_resource_path("concept_stocks.csv")
+        if concepts_path is None or concept_stocks_path is None:
+            return {"status": "error", "message": "概念数据文件路径未找到"}
+        
         if not os.path.exists(concepts_path) or not os.path.exists(concept_stocks_path):
             return {"status": "error", "message": "概念数据文件不存在"}
 

@@ -41,14 +41,18 @@ def init_shared_picked_data():
         shared_picked_data['records'] = shared_picked_manager.list()
 
 
-def load_picked_data():
+def load_picked_data(static_dir=None):
     """加载picked.csv到内存和共享内存中"""
     global picked_df, shared_picked_data
 
     # 初始化共享内存
     init_shared_picked_data()
     try:
-        picked_path = get_resource_path("static/picked.csv")
+        if static_dir is None:
+            picked_path = get_resource_path("static/picked.csv")
+        else:
+            picked_path = os.path.join(static_dir, "picked.csv")
+        
         if picked_path and os.path.exists(picked_path):
             logging.debug(f"[pick_service] 发现picked.csv文件: {picked_path}")
             # 确保股票代码列被读取为字符串类型
@@ -262,6 +266,12 @@ def get_shared_picked_data():
     return shared_picked_data
 
 
+def get_shared_picked_manager():
+    """获取共享内存管理器，供外部进程使用"""
+    global shared_picked_manager
+    return shared_picked_manager
+
+
 def get_current_picked_df():
     """获取当前内存中的picked_df，供worker进程使用"""
     global picked_df
@@ -288,9 +298,31 @@ def get_shared_picked_df():
         return pd.DataFrame(columns=['股票代码', '股票名称', '板块代码', '板块名称'])
 
 
+def force_sync_to_shared_memory():
+    """强制将当前picked_df同步到共享内存，用于初始化时确保数据同步"""
+    global picked_df, shared_picked_data
+    logging.debug(f"[force_sync_to_shared_memory] 强制同步开始, picked_df长度: {len(picked_df) if picked_df is not None else 'None'}")
+    
+    # 确保共享内存已初始化
+    if shared_picked_data is None:
+        init_shared_picked_data()
+    
+    # 强制同步数据
+    _sync_to_shared_memory()
+    
+    # 验证同步结果
+    if shared_picked_data is not None and 'records' in shared_picked_data:
+        record_count = len(shared_picked_data['records'])
+        logging.debug(f"[force_sync_to_shared_memory] 强制同步完成, 共享内存records数量: {record_count}")
+        return record_count
+    else:
+        logging.error("[force_sync_to_shared_memory] 强制同步失败，共享内存仍为空")
+        return 0
+
+
 def set_shared_picked_data(data):
     """设置全局 shared_picked_data，供worker进程调用"""
-    global shared_picked_data
+    global shared_picked_data, shared_picked_manager
     shared_picked_data = data
     logging.debug(f"[set_shared_picked_data] 设置 shared_picked_data: type={type(shared_picked_data)}, id={id(shared_picked_data)}, keys={list(shared_picked_data.keys()) if hasattr(shared_picked_data, 'keys') else '无'}")
     # 自动补全 records 字段
