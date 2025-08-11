@@ -31,7 +31,7 @@ def _setup_child_logging(q: Queue, level):
     logger.handlers = [queue_handler]
 
 
-def worker(log_q: Queue, log_level, data_q: Queue, interval=2, initial_concept_df=None, initial_changes_df=None, batch_interval=300, shared_picked_data=None):
+def worker(log_q: Queue, log_level, data_q: Queue, interval=5, initial_concept_df=None, initial_changes_df=None, batch_interval=300, shared_picked_data=None):
     """
     这个worker进程现在接收两个队列：
     - log_q: 用于发送日志记录到主进程。

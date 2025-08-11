@@ -19,7 +19,7 @@ from routes.api import router as api_router
 from routes.websocket import router as websocket_router, set_buffer_queue
 
 # 1. 设置日志
-LOG_LEVEL = logging.INFO
+LOG_LEVEL = logging.DEBUG
 log_queue, queue_listener = setup_logging(LOG_LEVEL)
 
 # 2. 创建用于在后端和websockets之间传输数据的缓冲区队列

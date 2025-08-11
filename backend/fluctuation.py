@@ -22,14 +22,8 @@ def filter_stock_data(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 
     # 过滤涨跌幅条件：涨幅<100% 且 (涨幅≥5% 或 跌幅≤-5%)
     df = df.copy()
-    df = df[(df['涨跌幅'] < 1) & ((df['涨跌幅'] >= 0.05) | (df['涨跌幅'] <= -0.05))]
-
-    # 过滤负面类型
-    negative_types = ['8194', '8', '128', '8208', '8210', '8212', '8214', '8216', '8203', '99', '106']
-    df = df[~df['类型'].astype(str).isin(negative_types)]
-
-    # 过滤ST股票
     df = df[~df['股票名称'].str.contains('ST')]
+    
 
     return df
 
@@ -89,20 +83,29 @@ def getChanges():
             't': '类型',
             'i': '信息'
         }
-        df = df.rename(columns=column_mapping)
+        df = df.rename(columns=column_mapping)  
 
-        # 解析info字段（包含涨跌幅、最新价、涨跌额）
-        if '信息' in df.columns:
-            info_df = df['信息'].str.split(',', expand=True)
-            if len(info_df.columns) >= 3:
-                # 清理并转换数据
-                info_df[0] = pd.to_numeric(info_df[0], errors='coerce')
+        # 拆分相关信息
+        info_df = df['信息'].str.split(',', expand=True)
+        if info_df.shape[1] >= 3:
+            df['涨跌幅'] = pd.to_numeric(info_df[0], errors='coerce')
 
-                if not df.empty:
-                    df['涨跌幅'] = info_df[0]
-
-        df = filter_stock_data(df)
+            # 只对特定类型的涨停板使用固定涨跌幅，其他情况保留解析出的数据
+        def calculate_change_rate(row):
+            if row['类型'] == '封涨停板':
+                if row['代码'].startswith('8'):
+                    return 0.3
+                elif row['代码'].startswith('300') or row['代码'].startswith('688'):
+                    return 0.2
+                else:
+                    return 0.1
+            else:
+                # 对于非涨停板，使用解析出的涨跌幅数据
+                return row['涨跌幅'] if pd.notnull(row['涨跌幅']) else 0.0
         
+        df['涨跌幅'] = df.apply(calculate_change_rate, axis=1)
+        df = df[(df['涨跌幅'] < 1) & ((df['涨跌幅'] >= 0.05) | (df['涨跌幅'] <= -0.05))]
+        df = filter_stock_data(df)
         # 如果过滤后没有数据，返回空DataFrame
         if df is None or df.empty:
             logging.debug("[getChanges] 过滤后没有符合条件的数据")
