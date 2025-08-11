@@ -98,21 +98,20 @@ def worker(log_q: Queue, log_level, data_q: Queue, interval=5, initial_concept_d
                 master_df = master_df[master_df['四舍五入取整'] != 0]
                 
                 # 应用排序和板块信息
-                processed_df = apply_sorting(master_df, initial_concept_df, uplimit_cache, for_frontend=False)
-                frontend_df = apply_sorting(processed_df, initial_concept_df, uplimit_cache, for_frontend=True)
+                master_df = apply_sorting(master_df, initial_concept_df, uplimit_cache)
 
                 full_data = {
-                    "columns": list(frontend_df.columns),
-                    "values": frontend_df.values.tolist()
+                    "columns": list(master_df.columns),
+                    "values": master_df.values.tolist()
                 }
                 data_q.put(full_data)
-                logging.debug(f"[worker_queue] 已将 {len(frontend_df)} 条格式化数据推送到数据队列")
+                logging.debug(f"[worker_queue] 已将 {len(master_df)} 条格式化数据推送到数据队列")
 
                 now = time.time()
                 if (now - last_write) >= batch_interval:
                     try:
-                        processed_df.to_csv(changes_path, index=False)
-                        logging.info(f"[worker_queue] 批量写入 {len(processed_df)} 条记录到 {changes_path}")
+                        master_df.to_csv(changes_path, index=False)
+                        logging.info(f"[worker_queue] 批量写入 {len(master_df)} 条记录到 {changes_path}")
                         last_write = now
                     except Exception as e:
                         logging.error(f"[worker_queue] 批量写入磁盘失败: {e}", exc_info=True)

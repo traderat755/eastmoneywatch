@@ -2,7 +2,7 @@ import pandas as pd
 from services.pick_service import get_shared_picked_df
 import logging
 
-def apply_sorting(df,concept_df, uplimit_cache=None, for_frontend=True):
+def apply_sorting(df,concept_df, uplimit_cache=None):
     """统一的排序函数：添加概念板块信息并按板块排序（picked_df最前，rising concepts次之，其他concept_df最后）
 
     Args:
@@ -40,69 +40,57 @@ def apply_sorting(df,concept_df, uplimit_cache=None, for_frontend=True):
         if uplimit_cache:
             df['标识'] = df['名称'].map(lambda x: uplimit_cache.get(x, ''))
 
+        # 为前端返回指定格式的DataFrame，处理可能的重复列名
+        sector_code_col = None
+        sector_name_col = None
 
-        # 5. 返回数据
-        if for_frontend:
-            # 为前端返回指定格式的DataFrame，处理可能的重复列名
-            sector_code_col = None
-            sector_name_col = None
+        # 添加调试日志
+        logging.debug(f"[apply_sorting] 当前df的所有列: {list(df.columns)}")
 
-            # 添加调试日志
-            logging.debug(f"[apply_sorting] 当前df的所有列: {list(df.columns)}")
+        # 寻找正确的板块代码和名称列
+        for col in ['板块代码', '板块代码_x', '板块代码_y']:
+            if col in df.columns:
+                sector_code_col = col
+                break
 
-            # 寻找正确的板块代码和名称列
-            for col in ['板块代码', '板块代码_x', '板块代码_y']:
-                if col in df.columns:
-                    sector_code_col = col
-                    break
+        for col in ['板块名称', '板块名称_x', '板块名称_y']:
+            if col in df.columns:
+                sector_name_col = col
+                break
 
-            for col in ['板块名称', '板块名称_x', '板块名称_y']:
-                if col in df.columns:
-                    sector_name_col = col
-                    break
+        # 添加调试日志
+        logging.debug(f"[apply_sorting] 找到的板块代码列: {sector_code_col}")
+        logging.debug(f"[apply_sorting] 找到的板块名称列: {sector_name_col}")
 
-            # 添加调试日志
-            logging.debug(f"[apply_sorting] 找到的板块代码列: {sector_code_col}")
-            logging.debug(f"[apply_sorting] 找到的板块名称列: {sector_name_col}")
-
-            # 构建最终列名列表，去掉板块代码列以减少数据传输量
-            final_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '四舍五入取整', '上下午', '标识']
-            # 添加板块名称和板块代码
-            if sector_name_col:
-                final_columns.insert(1, sector_name_col)
-                logging.debug(f"[apply_sorting] 已将板块名称列添加到final_columns: {sector_name_col}")
-            else:
-                logging.debug(f"[apply_sorting] 未找到板块名称列，不添加到final_columns")
-                
-            if sector_code_col:
-                final_columns.insert(2, sector_code_col)
-                logging.debug(f"[apply_sorting] 已将板块代码列添加到final_columns: {sector_code_col}")
-            else:
-                logging.debug(f"[apply_sorting] 未找到板块代码列，不添加到final_columns")
-
-            available_columns = [col for col in final_columns if col in df.columns]
-            logging.debug(f"[apply_sorting] available_columns: {available_columns}")
-            result_df = df[available_columns].copy()
-            logging.debug(f"[apply_sorting] result_df前3行数据:\n{result_df.head(3)}")
-
-            # 如果使用了带后缀的列名，重命名为标准名称
-            if sector_name_col and sector_name_col != '板块名称':
-                result_df = result_df.rename(columns={sector_name_col: '板块名称'})
-                
-            if sector_code_col and sector_code_col != '板块代码':
-                result_df = result_df.rename(columns={sector_code_col: '板块代码'})
-
-            logging.debug(f"[apply_sorting] 处理完成，返回{len(result_df)}条记录给前端，列: {list(result_df.columns)}")
-            logging.debug(f"[apply_sorting] 最终返回数据前3行:\n{result_df.head(3)}")
+        # 构建最终列名列表，去掉板块代码列以减少数据传输量
+        final_columns = ['股票代码', '时间', '名称', '相关信息', '类型', '四舍五入取整', '上下午', '标识']
+        # 添加板块名称和板块代码
+        if sector_name_col:
+            final_columns.insert(1, sector_name_col)
+            logging.debug(f"[apply_sorting] 已将板块名称列添加到final_columns: {sector_name_col}")
         else:
-            # 为存储返回完整数据，确保包含股票代码
-            result_df = df.copy()
-            # 验证股票代码列是否存在
-            if '股票代码' not in result_df.columns:
-                logging.debug(f"[apply_sorting] 警告：存储数据中缺少股票代码列，当前列: {list(result_df.columns)}")
-            else:
-                logging.debug(f"[apply_sorting] 股票代码列验证通过，非空数量: {result_df['股票代码'].notna().sum()}/{len(result_df)}")
-            logging.debug(f"[apply_sorting] 处理完成，返回{len(result_df)}条完整记录用于存储，列: {list(result_df.columns)}")
+            logging.debug(f"[apply_sorting] 未找到板块名称列，不添加到final_columns")
+            
+        if sector_code_col:
+            final_columns.insert(2, sector_code_col)
+            logging.debug(f"[apply_sorting] 已将板块代码列添加到final_columns: {sector_code_col}")
+        else:
+            logging.debug(f"[apply_sorting] 未找到板块代码列，不添加到final_columns")
+
+        available_columns = [col for col in final_columns if col in df.columns]
+        logging.debug(f"[apply_sorting] available_columns: {available_columns}")
+        result_df = df[available_columns].copy()
+        logging.debug(f"[apply_sorting] result_df前3行数据:\n{result_df.head(3)}")
+
+        # 如果使用了带后缀的列名，重命名为标准名称
+        if sector_name_col and sector_name_col != '板块名称':
+            result_df = result_df.rename(columns={sector_name_col: '板块名称'})
+            
+        if sector_code_col and sector_code_col != '板块代码':
+            result_df = result_df.rename(columns={sector_code_col: '板块代码'})
+
+        logging.debug(f"[apply_sorting] 处理完成，返回{len(result_df)}条记录给前端，列: {list(result_df.columns)}")
+        logging.debug(f"[apply_sorting] 最终返回数据前3行:\n{result_df.head(3)}")
 
         return result_df
 
