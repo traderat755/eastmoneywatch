@@ -35,19 +35,35 @@ const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
     }
   };
 
+  // 格式化股票代码用于雪球链接
+  const formatStockCodeForXueqiu = (code: string) => {
+    if (code.startsWith('6')) {
+      return `SH${code}`;
+    } else if (code.startsWith('8')) {
+      return `BJ${code}`;
+    } else {
+      return `SZ${code}`;
+    }
+  };
+
+  const formattedCode = formatStockCodeForXueqiu(stock.code);
+
   return (
     <>
       {showComma && ', '}
-      <span
-        className={`${stock.isNew ? 'bg-yellow-100 dark:bg-gray-800' : ''} cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 px-1 rounded transition-colors`}
-        onClick={() => copyToClipboard(stock.code)}
-        title={`点击复制股票代码 ${stock.code}`}
-      >
+      <span>
+        <span
+          className={`${stock.isNew ? 'bg-yellow-100 dark:bg-gray-800' : ''} cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-800 px-1 rounded transition-colors`}
+          onClick={() => copyToClipboard(stock.code)}
+          title={`点击复制股票代码 ${stock.code}`}
+        >
         {stock.name}
+        </span>
+
         {stock.sign && (
           <span className="text-pink-600 ml-1">[{stock.sign}]</span>
         )}
-        {' '}
+        <a href={`https://xueqiu.com/S/${formattedCode}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
         {(
           stock.isLimit || Math.round(Number(stock.value)) >= 10
         ) ? (
@@ -59,6 +75,7 @@ const StockItem: React.FC<StockItemProps> = ({ stock, showComma = false }) => {
             {parseFloat(stock.value) > 0 ? '+' + stock.value : stock.value}
             </span>
         )}
+        </a>
       </span>
     </>
   );
