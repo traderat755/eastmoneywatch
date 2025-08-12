@@ -47,7 +47,7 @@ def worker(log_q: Queue, log_level, data_q: Queue, interval=5, initial_concept_d
     changes_path = os.path.join(static_dir, f"changes_{current_date}.csv")
 
     standard_columns = [
-        '股票代码', '时间', '名称', '相关信息', '类型', '板块名称', '四舍五入取整', '上下午', '时间排序', '标识'
+        '股票代码', '时间', '名称', '相关信息', '类型', '板块代码', '板块名称', '四舍五入取整', '上下午', '时间排序', '标识'
     ]
 
     master_df = initial_changes_df if initial_changes_df is not None else pd.DataFrame(columns=standard_columns)
@@ -58,6 +58,15 @@ def worker(log_q: Queue, log_level, data_q: Queue, interval=5, initial_concept_d
     if shared_picked_data is not None:
         set_shared_picked_data(shared_picked_data)
         logging.debug(f"[worker_queue] set_shared_picked_data: id={id(shared_picked_data)}, keys={list(shared_picked_data.keys()) if shared_picked_data else 'None'}")
+        
+        # 验证共享内存是否正确传递并可访问
+        from services.pick_service import get_shared_picked_df
+        test_df = get_shared_picked_df()
+        logging.debug(f"[worker_queue] 共享内存验证: picked_df行数={len(test_df)}, 列={list(test_df.columns)}")
+        if not test_df.empty:
+            logging.debug(f"[worker_queue] 共享内存验证成功: 前3行数据=\n{test_df.head(3)}")
+        else:
+            logging.warning("[worker_queue] 共享内存验证失败: picked_df为空，这可能导致apply_sorting无法正确处理精选股票")
 
 
     while True:

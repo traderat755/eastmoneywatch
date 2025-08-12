@@ -467,6 +467,7 @@ const StockMarketMonitor = () => {
                           <TableCell className="font-semibold align-top text-gray-800 dark:text-gray-200 border-r dark:border-gray-600 p-3">
                             <SectorButton
                               sectorName={conceptName}
+                              sectorCode={sectors.find(s => s.板块名称 === conceptName)?.板块代码 || ''}
                               isPicked={pickedSectorNames.includes(conceptName)}
                               loading={pickedLoading}
                               onClick={handleSectorClick}

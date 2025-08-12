@@ -197,8 +197,22 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
     # 验证共享内存状态
     if shared_picked_data_ref is not None and 'records' in shared_picked_data_ref:
         logging.debug(f"[sidecar] 共享内存验证成功，records数量: {len(shared_picked_data_ref['records'])}")
+        # 额外验证：尝试从共享内存构建DataFrame
+        from services.pick_service import get_shared_picked_df
+        test_picked_df = get_shared_picked_df()
+        logging.debug(f"[sidecar] 共享内存DataFrame测试: {len(test_picked_df)}行, 列={list(test_picked_df.columns)}")
+        if not test_picked_df.empty:
+            logging.debug(f"[sidecar] 共享内存DataFrame测试成功，示例数据:\n{test_picked_df.head(2)}")
     else:
         logging.error("[sidecar] 共享内存验证失败，worker进程可能无法访问picked数据")
+        # 如果验证失败，尝试重新初始化
+        logging.debug("[sidecar] 尝试重新初始化共享内存...")
+        record_count = force_sync_to_shared_memory()
+        shared_picked_data_ref = get_shared_picked_data()
+        if shared_picked_data_ref is not None and 'records' in shared_picked_data_ref:
+            logging.debug(f"[sidecar] 重新初始化成功，records数量: {len(shared_picked_data_ref['records'])}")
+        else:
+            logging.error("[sidecar] 重新初始化仍然失败")
 
     if get_changes_proc is None or not get_changes_proc.is_alive():
         try:
@@ -207,8 +221,9 @@ def initialize_backend_services(buffer_queue: Queue, lq: Queue, level):
                 logging.debug(f"[sidecar] 读取当前changes文件传递给worker: {changes_path}")
                 current_changes_df = pd.read_csv(changes_path)
                 current_changes_df = current_changes_df.fillna('').infer_objects(copy=False)
+                current_changes_df['板块代码'] = 'BK'
                 current_changes_df['板块名称'] = '未知板块'
-                standard_columns = ['股票代码', '板块名称', '板块代码', '时间', '名称', '相关信息', '类型', '四舍五入取整', '上下午','标识']
+                standard_columns = ['股票代码','板块代码', '板块名称', '板块代码', '时间', '名称', '相关信息', '类型', '四舍五入取整', '上下午','标识']
                 if not all(col in current_changes_df.columns for col in standard_columns):
                     logging.warning(f"[backend_service] changes文件字段{current_changes_df.columns}不匹配，将使用空DataFrame。")
                     current_changes_df = pd.DataFrame(columns=standard_columns)

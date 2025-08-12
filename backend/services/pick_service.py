@@ -325,15 +325,26 @@ def set_shared_picked_data(data):
     global shared_picked_data, shared_picked_manager
     shared_picked_data = data
     logging.debug(f"[set_shared_picked_data] 设置 shared_picked_data: type={type(shared_picked_data)}, id={id(shared_picked_data)}, keys={list(shared_picked_data.keys()) if hasattr(shared_picked_data, 'keys') else '无'}")
-    # 自动补全 records 字段
-    if shared_picked_data is not None and 'records' not in shared_picked_data:
-        try:
-            from multiprocessing import Manager
-            if isinstance(shared_picked_data, dict):
-                shared_picked_data['records'] = []
-            else:
-                # 兼容 Manager().dict()
-                shared_picked_data['records'] = Manager().list()
-            logging.debug(f"[set_shared_picked_data] 自动补全 records 字段")
-        except Exception as e:
-            logging.debug(f"[set_shared_picked_data] 自动补全 records 字段失败: {e}")
+    
+    # 验证数据完整性
+    if shared_picked_data is not None:
+        if 'records' not in shared_picked_data:
+            logging.warning("[set_shared_picked_data] 共享内存中缺少records字段，尝试补全")
+            try:
+                from multiprocessing import Manager
+                if isinstance(shared_picked_data, dict):
+                    shared_picked_data['records'] = []
+                else:
+                    # 兼容 Manager().dict()
+                    shared_picked_data['records'] = Manager().list()
+                logging.debug("[set_shared_picked_data] 自动补全 records 字段成功")
+            except Exception as e:
+                logging.error(f"[set_shared_picked_data] 自动补全 records 字段失败: {e}")
+        else:
+            # 验证records字段的数据
+            records_count = len(shared_picked_data['records']) if 'records' in shared_picked_data else 0
+            logging.debug(f"[set_shared_picked_data] 共享内存records字段包含 {records_count} 条记录")
+            if records_count > 0:
+                logging.debug(f"[set_shared_picked_data] 首条记录示例: {shared_picked_data['records'][0]}")
+    else:
+        logging.warning("[set_shared_picked_data] 接收到None的共享数据，这可能导致picked功能异常")
