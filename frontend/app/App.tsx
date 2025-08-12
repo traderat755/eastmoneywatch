@@ -18,6 +18,7 @@ interface StockInfo {
   isNew?: boolean;
   type?: string;
   sign?: string;
+  sectorCode?: string;
 }
 
 type TimeGroup = Record<string, StockInfo[]>;
@@ -31,6 +32,7 @@ type ConceptData = Record<string, PeriodData>;
 
 interface StockDataItem {
   "板块名称": string;
+  "板块代码": string;
   "时间": string;
   "名称": string;
   "股票代码": string;
@@ -146,7 +148,8 @@ const StockMarketMonitor = () => {
                 isLimit: isLimit,
                 isNew: isLastTimeStock, // 使用isNew字段标记最后时间点的股票
                 type: item["类型"], // 添加类型字段
-                sign: item["标识"] // 添加sign字段
+                sign: item["标识"], // 添加sign字段
+                sectorCode: item["板块代码"] // 添加板块代码字段
               });
             }
 
@@ -215,7 +218,8 @@ const StockMarketMonitor = () => {
                 isLimit: isLimit,
                 isNew: isLastTimeStock, // 使用isNew字段标记最后时间点的股票
                 type: item["类型"], // 添加类型字段
-                sign: item["标识"] // 添加sign字段
+                sign: item["标识"], // 添加sign字段
+                sectorCode: item["板块代码"] // 添加板块代码字段
               });
             }
 
@@ -467,7 +471,23 @@ const StockMarketMonitor = () => {
                           <TableCell className="font-semibold align-top text-gray-800 dark:text-gray-200 border-r dark:border-gray-600 p-3">
                             <SectorButton
                               sectorName={conceptName}
-                              sectorCode={sectors.find(s => s.板块名称 === conceptName)?.板块代码 || ''}
+                              sectorCode={(() => {
+                                // 从 StockDataItem 中获取板块代码
+                                const periodData = data[conceptName];
+                                if (!periodData) return '';
+                                
+                                // 遍历所有时间段找到第一个有效的板块代码
+                                for (const period of ['上午', '下午'] as const) {
+                                  const timeGroup = periodData[period];
+                                  for (const time in timeGroup) {
+                                    const stocks = timeGroup[time];
+                                    if (stocks.length > 0 && stocks[0].sectorCode) {
+                                      return stocks[0].sectorCode;
+                                    }
+                                  }
+                                }
+                                return '';
+                              })()}
                               isPicked={pickedSectorNames.includes(conceptName)}
                               loading={pickedLoading}
                               onClick={handleSectorClick}
